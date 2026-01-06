@@ -1,9 +1,9 @@
-import sql from "@/app/api/utils/sql";
+import sql from "#/app/api/utils/sql";
 import {
   paypalRequest,
   getWebhookId,
   getPayPalMode,
-} from "@/app/api/paypal/utils/auth";
+} from "#/app/api/paypal/utils/auth";
 
 /**
  * PayPal Webhook署名を検証

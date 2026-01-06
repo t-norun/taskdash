@@ -1,4 +1,4 @@
-import sql from "@/app/api/utils/sql";
+import sql from "#/app/api/utils/sql";
 
 // 管理者権限チェック
 function isAdmin(email) {

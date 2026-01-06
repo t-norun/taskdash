@@ -37,7 +37,7 @@ Create `__tests__/HomeScreen-test.jsx` with:
 ```jsx
 import { render } from '@testing-library/react-native';
 
-import HomeScreen, { CustomText } from '@/app/index';
+import HomeScreen, { CustomText } from '#/app/index';
 
 describe('<HomeScreen />', () => {
     test('Text renders correctly on HomeScreen', () => {

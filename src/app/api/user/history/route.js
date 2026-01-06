@@ -1,5 +1,5 @@
-import sql from "@/app/api/utils/sql";
-import { authenticateUser } from "@/app/api/utils/auth";
+import sql from "#/app/api/utils/sql";
+import { authenticateUser } from "#/app/api/utils/auth";
 
 export async function GET(request) {
   try {
