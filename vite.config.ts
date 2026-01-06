@@ -14,6 +14,18 @@ import { restart } from './plugins/restart';
 import { restartEnvFileChange } from './plugins/restartEnvFileChange';
 
 export default defineConfig({
+  // ✅ Top-level await 対策（SSR/Nodeビルドのターゲットを引き上げる）
+  // ブラウザ側もES2022以上にしておく（esbuild-transpileの制限に引っかからないように）
+  build: {
+    target: 'es2022',
+  },
+  esbuild: {
+    target: 'es2022',
+  },
+  ssr: {
+    target: 'node18',
+  },
+
   // Keep them available via import.meta.env.NEXT_PUBLIC_*
   envPrefix: 'NEXT_PUBLIC_',
   optimizeDeps: {
