@@ -1,5 +1,5 @@
-import sql from "../../utils/sql";
-import { extractBearerToken, verifyAccessToken } from "../../utils/jwt";
+import sql from "./sql.js";
+import { extractBearerToken, verifyAccessToken } from "./jwt.js";
 
 /**
  * Bearer認証ミドルウェア

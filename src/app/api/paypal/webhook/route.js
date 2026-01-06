@@ -37,7 +37,7 @@ async function verifyWebhookSignature(request, event) {
   if (!transmissionId || !transmissionTime || !transmissionSig) {
     console.error("Missing webhook headers");
     return false;
-  }
+  　}
 
   try {
     const verifyResponse = await paypalRequest(
