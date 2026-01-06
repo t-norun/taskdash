@@ -5,6 +5,9 @@
   "engines": {
     "node": ">=20"
   },
+  "imports": {
+    "#/app/*": "./src/app/*"
+  },
   "scripts": {
     "dev": "react-router dev",
     "build": "react-router build",
@@ -100,6 +103,7 @@
     "next-themes": "^0.3.0"
   }
 }
+
 
 
 
