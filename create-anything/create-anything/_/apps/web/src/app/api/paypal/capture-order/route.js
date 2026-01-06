@@ -1,6 +1,6 @@
-import sql from "#/app/api/utils/sql";
+import sql from "../../utils/sql";
 import { paypalRequest } from "#/app/api/paypal/utils/auth";
-import { authenticateUser } from "#/app/api/utils/auth";
+import { authenticateUser } from "../../utils/auth";
 
 /**
  * PayPal決済を確定し、ユーザー残高に追加

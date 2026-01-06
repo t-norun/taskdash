@@ -1,5 +1,5 @@
-import { getPayPalMode } from "#/app/api/paypal/utils/auth";
-import sql from "#/app/api/utils/sql";
+import { getPayPalMode } from "../../paypal/utils/auth.js";
+import sql from "../../utils/sql";
 
 /**
  * 現在のPayPalモード取得（Admin用）

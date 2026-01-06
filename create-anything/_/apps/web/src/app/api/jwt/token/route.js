@@ -1,4 +1,4 @@
-import { extractBearerToken, verifyAccessToken } from "#/app/api/utils/jwt";
+import { extractBearerToken, verifyAccessToken } from "../../utils/jwt";
 
 export async function GET(request) {
   const token = extractBearerToken(request);

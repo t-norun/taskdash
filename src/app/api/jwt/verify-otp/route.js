@@ -1,9 +1,9 @@
-import sql from "#/app/api/utils/sql";
+import sql from "../../utils/sql";
 import {
   generateAccessToken,
   generateRefreshToken,
   generateRefreshTokenId,
-} from "#/app/api/utils/jwt";
+} from "../../utils/jwt";
 
 export async function POST(request) {
   try {

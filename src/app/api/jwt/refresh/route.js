@@ -1,10 +1,10 @@
-import sql from "#/app/api/utils/sql";
+import sql from "../../utils/sql";
 import {
   generateAccessToken,
   verifyRefreshToken,
   generateRefreshToken,
   generateRefreshTokenId,
-} from "#/app/api/utils/jwt";
+} from "../../utils/jwt";
 
 /**
  * Access Tokenをリフレッシュ

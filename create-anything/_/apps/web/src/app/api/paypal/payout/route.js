@@ -1,6 +1,6 @@
-import sql from "#/app/api/utils/sql";
+import sql from "../../utils/sql";
 import { paypalRequest } from "#/app/api/paypal/utils/auth";
-import { authenticateUser } from "#/app/api/utils/auth";
+import { authenticateUser } from "../../utils/auth";
 
 /**
  * ユーザーへのPayPal送金（報酬支払い）

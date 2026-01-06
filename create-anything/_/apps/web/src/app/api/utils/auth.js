@@ -1,5 +1,5 @@
-import sql from "#/app/api/utils/sql";
-import { extractBearerToken, verifyAccessToken } from "#/app/api/utils/jwt";
+import sql from "../../utils/sql";
+import { extractBearerToken, verifyAccessToken } from "../../utils/jwt";
 
 /**
  * Bearer認証ミドルウェア

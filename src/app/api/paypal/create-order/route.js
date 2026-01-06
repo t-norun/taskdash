@@ -1,6 +1,6 @@
-import sql from "#/app/api/utils/sql";
-import { paypalRequest } from "#/app/api/paypal/utils/auth";
-import { authenticateUser } from "#/app/api/utils/auth";
+import sql from "../../utils/sql";
+import { paypalRequest } from "../utils/auth.js";
+import { authenticateUser } from "../../utils/auth";
 
 /**
  * ユーザー入金用のPayPal決済を作成
