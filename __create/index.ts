@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import nodeConsole from 'node:console';
-import path from 'node:path';
 
 import { skipCSRFCheck } from '@auth/core';
 import Credentials from '@auth/core/providers/credentials';
@@ -22,33 +21,10 @@ import { getHTMLForErrorPage } from './get-html-for-error-page';
 import { isAuthAction } from './is-auth-action';
 import { API_BASENAME, api } from './route-builder';
 
-// -----------------------------------------------------------------------------
-// 🔧 Render/Vite SSRビルド時に process.cwd() が build/server になってしまい、
-// route ファイル探索が build/server/src/app/api を見に行って ENOENT で落ちる。
-// なのでプロジェクトルートに強制的に戻す。
-// -----------------------------------------------------------------------------
-function ensureProjectRootCwd() {
-  const cwd = process.cwd().replace(/\\/g, '/');
-  if (cwd.endsWith('/build/server')) {
-    process.chdir(path.resolve(process.cwd(), '../..'));
-    return;
-  }
-  if (cwd.endsWith('/build')) {
-    process.chdir(path.resolve(process.cwd(), '..'));
-    return;
-  }
-  // それ以外は触らない（ローカル/通常実行）
-}
-ensureProjectRootCwd();
-
-// -----------------------------------------------------------------------------
 // Neon websocket
-// -----------------------------------------------------------------------------
 neonConfig.webSocketConstructor = ws;
 
-// -----------------------------------------------------------------------------
 // Request trace id logging
-// -----------------------------------------------------------------------------
 const als = new AsyncLocalStorage<{ requestId: string }>();
 
 for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
@@ -61,17 +37,13 @@ for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
   };
 }
 
-// -----------------------------------------------------------------------------
 // DB / adapter
-// -----------------------------------------------------------------------------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 const adapter = NeonAdapter(pool);
 
-// -----------------------------------------------------------------------------
 // Hono app
-// -----------------------------------------------------------------------------
 const app = new Hono();
 
 app.use('*', requestId());
@@ -96,9 +68,7 @@ app.onError((err, c) => {
   return c.html(getHTMLForErrorPage(err), 200);
 });
 
-// -----------------------------------------------------------------------------
 // CORS
-// -----------------------------------------------------------------------------
 if (process.env.CORS_ORIGINS) {
   app.use(
     '/*',
@@ -108,22 +78,18 @@ if (process.env.CORS_ORIGINS) {
   );
 }
 
-// -----------------------------------------------------------------------------
 // Body limit
-// -----------------------------------------------------------------------------
 for (const method of ['post', 'put', 'patch'] as const) {
   app[method](
     '*',
     bodyLimit({
-      maxSize: 4.5 * 1024 * 1024, // 4.5mb to match vercel limit
+      maxSize: 4.5 * 1024 * 1024,
       onError: (c) => c.json({ error: 'Body size limit exceeded' }, 413),
     })
   );
 }
 
-// -----------------------------------------------------------------------------
 // Auth
-// -----------------------------------------------------------------------------
 if (process.env.AUTH_SECRET) {
   app.use(
     '*',
@@ -134,9 +100,7 @@ if (process.env.AUTH_SECRET) {
         signOut: '/account/logout',
       },
       skipCSRFCheck,
-      session: {
-        strategy: 'jwt',
-      },
+      session: { strategy: 'jwt' },
       callbacks: {
         session({ session, token }) {
           if (token.sub) session.user.id = token.sub;
@@ -190,8 +154,8 @@ if (process.env.AUTH_SECRET) {
             if (!email || !password) return null;
             if (typeof email !== 'string' || typeof password !== 'string') return null;
 
-            const user = await adapter.getUserByEmail(email);
-            if (user) return null;
+            const existing = await adapter.getUserByEmail(email);
+            if (existing) return null;
 
             const newUser = await adapter.createUser({
               id: crypto.randomUUID(),
@@ -217,9 +181,7 @@ if (process.env.AUTH_SECRET) {
   );
 }
 
-// -----------------------------------------------------------------------------
 // Integrations proxy
-// -----------------------------------------------------------------------------
 app.all('/integrations/:path{.+}', async (c) => {
   const queryParams = c.req.query();
   const qs =
@@ -231,7 +193,7 @@ app.all('/integrations/:path{.+}', async (c) => {
   return proxy(url, {
     method: c.req.method,
     body: c.req.raw.body ?? null,
-    // @ts-ignore - required for streaming integrations
+    // @ts-ignore
     duplex: 'half',
     redirect: 'manual',
     headers: {
@@ -244,24 +206,21 @@ app.all('/integrations/:path{.+}', async (c) => {
   });
 });
 
-// -----------------------------------------------------------------------------
 // Auth route
-// -----------------------------------------------------------------------------
 app.use('/api/auth/*', async (c, next) => {
   if (isAuthAction(c.req.path)) return authHandler()(c, next);
   return next();
 });
 
-// -----------------------------------------------------------------------------
-// API routes
-// -----------------------------------------------------------------------------
+// ✅ API routes（ここだけでOK。ファイルスキャン型の自動登録は一切しない）
 app.route(API_BASENAME, api);
 
-// -----------------------------------------------------------------------------
-// Server export
-// -----------------------------------------------------------------------------
-export default await createHonoServer({
+// ✅ Top-level await をやめる（ビルドターゲット問題の保険）
+const serverPromise = createHonoServer({
   app,
   defaultLogger: false,
 });
+
+export default serverPromise;
+
 
