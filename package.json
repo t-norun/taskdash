@@ -97,6 +97,9 @@
     "vitest": "^3.2.4"
   },
   "overrides": {
-    "next-themes"
+    "next-themes": "^0.3.0"
+  }
+}
+
 
 
