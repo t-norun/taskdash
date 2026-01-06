@@ -1,12 +1,14 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import nodeConsole from 'node:console';
+import path from 'node:path';
+
 import { skipCSRFCheck } from '@auth/core';
 import Credentials from '@auth/core/providers/credentials';
 import { authHandler, initAuthConfig } from '@hono/auth-js';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { hash, verify } from 'argon2';
 import { Hono } from 'hono';
-import { contextStorage, getContext } from 'hono/context-storage';
+import { contextStorage } from 'hono/context-storage';
 import { cors } from 'hono/cors';
 import { proxy } from 'hono/proxy';
 import { bodyLimit } from 'hono/body-limit';
@@ -14,12 +16,39 @@ import { requestId } from 'hono/request-id';
 import { createHonoServer } from 'react-router-hono-server/node';
 import { serializeError } from 'serialize-error';
 import ws from 'ws';
+
 import NeonAdapter from './adapter';
 import { getHTMLForErrorPage } from './get-html-for-error-page';
 import { isAuthAction } from './is-auth-action';
 import { API_BASENAME, api } from './route-builder';
+
+// -----------------------------------------------------------------------------
+// 🔧 Render/Vite SSRビルド時に process.cwd() が build/server になってしまい、
+// route ファイル探索が build/server/src/app/api を見に行って ENOENT で落ちる。
+// なのでプロジェクトルートに強制的に戻す。
+// -----------------------------------------------------------------------------
+function ensureProjectRootCwd() {
+  const cwd = process.cwd().replace(/\\/g, '/');
+  if (cwd.endsWith('/build/server')) {
+    process.chdir(path.resolve(process.cwd(), '../..'));
+    return;
+  }
+  if (cwd.endsWith('/build')) {
+    process.chdir(path.resolve(process.cwd(), '..'));
+    return;
+  }
+  // それ以外は触らない（ローカル/通常実行）
+}
+ensureProjectRootCwd();
+
+// -----------------------------------------------------------------------------
+// Neon websocket
+// -----------------------------------------------------------------------------
 neonConfig.webSocketConstructor = ws;
 
+// -----------------------------------------------------------------------------
+// Request trace id logging
+// -----------------------------------------------------------------------------
 const als = new AsyncLocalStorage<{ requestId: string }>();
 
 for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
@@ -27,26 +56,29 @@ for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
 
   console[method] = (...args: unknown[]) => {
     const requestId = als.getStore()?.requestId;
-    if (requestId) {
-      original(`[traceId:${requestId}]`, ...args);
-    } else {
-      original(...args);
-    }
+    if (requestId) original(`[traceId:${requestId}]`, ...args);
+    else original(...args);
   };
 }
 
+// -----------------------------------------------------------------------------
+// DB / adapter
+// -----------------------------------------------------------------------------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 const adapter = NeonAdapter(pool);
 
+// -----------------------------------------------------------------------------
+// Hono app
+// -----------------------------------------------------------------------------
 const app = new Hono();
 
 app.use('*', requestId());
 
 app.use('*', (c, next) => {
-  const requestId = c.get('requestId');
-  return als.run({ requestId }, () => next());
+  const requestIdValue = c.get('requestId');
+  return als.run({ requestId: requestIdValue }, () => next());
 });
 
 app.use(contextStorage());
@@ -64,6 +96,9 @@ app.onError((err, c) => {
   return c.html(getHTMLForErrorPage(err), 200);
 });
 
+// -----------------------------------------------------------------------------
+// CORS
+// -----------------------------------------------------------------------------
 if (process.env.CORS_ORIGINS) {
   app.use(
     '/*',
@@ -72,18 +107,23 @@ if (process.env.CORS_ORIGINS) {
     })
   );
 }
+
+// -----------------------------------------------------------------------------
+// Body limit
+// -----------------------------------------------------------------------------
 for (const method of ['post', 'put', 'patch'] as const) {
   app[method](
     '*',
     bodyLimit({
       maxSize: 4.5 * 1024 * 1024, // 4.5mb to match vercel limit
-      onError: (c) => {
-        return c.json({ error: 'Body size limit exceeded' }, 413);
-      },
+      onError: (c) => c.json({ error: 'Body size limit exceeded' }, 413),
     })
   );
 }
 
+// -----------------------------------------------------------------------------
+// Auth
+// -----------------------------------------------------------------------------
 if (process.env.AUTH_SECRET) {
   app.use(
     '*',
@@ -99,74 +139,40 @@ if (process.env.AUTH_SECRET) {
       },
       callbacks: {
         session({ session, token }) {
-          if (token.sub) {
-            session.user.id = token.sub;
-          }
+          if (token.sub) session.user.id = token.sub;
           return session;
         },
       },
       cookies: {
-        csrfToken: {
-          options: {
-            secure: true,
-            sameSite: 'none',
-          },
-        },
-        sessionToken: {
-          options: {
-            secure: true,
-            sameSite: 'none',
-          },
-        },
-        callbackUrl: {
-          options: {
-            secure: true,
-            sameSite: 'none',
-          },
-        },
+        csrfToken: { options: { secure: true, sameSite: 'none' } },
+        sessionToken: { options: { secure: true, sameSite: 'none' } },
+        callbackUrl: { options: { secure: true, sameSite: 'none' } },
       },
       providers: [
         Credentials({
           id: 'credentials-signin',
           name: 'Credentials Sign in',
           credentials: {
-            email: {
-              label: 'Email',
-              type: 'email',
-            },
-            password: {
-              label: 'Password',
-              type: 'password',
-            },
+            email: { label: 'Email', type: 'email' },
+            password: { label: 'Password', type: 'password' },
           },
           authorize: async (credentials) => {
-            const { email, password } = credentials;
-            if (!email || !password) {
-              return null;
-            }
-            if (typeof email !== 'string' || typeof password !== 'string') {
-              return null;
-            }
+            const { email, password } = credentials ?? {};
+            if (!email || !password) return null;
+            if (typeof email !== 'string' || typeof password !== 'string') return null;
 
-            // logic to verify if user exists
             const user = await adapter.getUserByEmail(email);
-            if (!user) {
-              return null;
-            }
+            if (!user) return null;
+
             const matchingAccount = user.accounts.find(
               (account) => account.provider === 'credentials'
             );
             const accountPassword = matchingAccount?.password;
-            if (!accountPassword) {
-              return null;
-            }
+            if (!accountPassword) return null;
 
             const isValid = await verify(accountPassword, password);
-            if (!isValid) {
-              return null;
-            }
+            if (!isValid) return null;
 
-            // return user object with the their profile data
             return user;
           },
         }),
@@ -174,63 +180,58 @@ if (process.env.AUTH_SECRET) {
           id: 'credentials-signup',
           name: 'Credentials Sign up',
           credentials: {
-            email: {
-              label: 'Email',
-              type: 'email',
-            },
-            password: {
-              label: 'Password',
-              type: 'password',
-            },
+            email: { label: 'Email', type: 'email' },
+            password: { label: 'Password', type: 'password' },
             name: { label: 'Name', type: 'text' },
             image: { label: 'Image', type: 'text', required: false },
           },
           authorize: async (credentials) => {
-            const { email, password, name, image } = credentials;
-            if (!email || !password) {
-              return null;
-            }
-            if (typeof email !== 'string' || typeof password !== 'string') {
-              return null;
-            }
+            const { email, password, name, image } = credentials ?? {};
+            if (!email || !password) return null;
+            if (typeof email !== 'string' || typeof password !== 'string') return null;
 
-            // logic to verify if user exists
             const user = await adapter.getUserByEmail(email);
-            if (!user) {
-              const newUser = await adapter.createUser({
-                id: crypto.randomUUID(),
-                emailVerified: null,
-                email,
-                name: typeof name === 'string' && name.length > 0 ? name : undefined,
-                image: typeof image === 'string' && image.length > 0 ? image : undefined,
-              });
-              await adapter.linkAccount({
-                extraData: {
-                  password: await hash(password),
-                },
-                type: 'credentials',
-                userId: newUser.id,
-                providerAccountId: newUser.id,
-                provider: 'credentials',
-              });
-              return newUser;
-            }
-            return null;
+            if (user) return null;
+
+            const newUser = await adapter.createUser({
+              id: crypto.randomUUID(),
+              emailVerified: null,
+              email,
+              name: typeof name === 'string' && name.length > 0 ? name : undefined,
+              image: typeof image === 'string' && image.length > 0 ? image : undefined,
+            });
+
+            await adapter.linkAccount({
+              extraData: { password: await hash(password) },
+              type: 'credentials',
+              userId: newUser.id,
+              providerAccountId: newUser.id,
+              provider: 'credentials',
+            });
+
+            return newUser;
           },
         }),
       ],
     }))
   );
 }
-app.all('/integrations/:path{.+}', async (c, next) => {
+
+// -----------------------------------------------------------------------------
+// Integrations proxy
+// -----------------------------------------------------------------------------
+app.all('/integrations/:path{.+}', async (c) => {
   const queryParams = c.req.query();
-  const url = `${process.env.NEXT_PUBLIC_CREATE_BASE_URL ?? 'https://www.create.xyz'}/integrations/${c.req.param('path')}${Object.keys(queryParams).length > 0 ? `?${new URLSearchParams(queryParams).toString()}` : ''}`;
+  const qs =
+    Object.keys(queryParams).length > 0 ? `?${new URLSearchParams(queryParams).toString()}` : '';
+
+  const base = process.env.NEXT_PUBLIC_CREATE_BASE_URL ?? 'https://www.create.xyz';
+  const url = `${base}/integrations/${c.req.param('path')}${qs}`;
 
   return proxy(url, {
     method: c.req.method,
     body: c.req.raw.body ?? null,
-    // @ts-ignore - this key is accepted even if types not aware and is
-    // required for streaming integrations
+    // @ts-ignore - required for streaming integrations
     duplex: 'half',
     redirect: 'manual',
     headers: {
@@ -243,15 +244,24 @@ app.all('/integrations/:path{.+}', async (c, next) => {
   });
 });
 
+// -----------------------------------------------------------------------------
+// Auth route
+// -----------------------------------------------------------------------------
 app.use('/api/auth/*', async (c, next) => {
-  if (isAuthAction(c.req.path)) {
-    return authHandler()(c, next);
-  }
+  if (isAuthAction(c.req.path)) return authHandler()(c, next);
   return next();
 });
+
+// -----------------------------------------------------------------------------
+// API routes
+// -----------------------------------------------------------------------------
 app.route(API_BASENAME, api);
 
+// -----------------------------------------------------------------------------
+// Server export
+// -----------------------------------------------------------------------------
 export default await createHonoServer({
   app,
   defaultLogger: false,
 });
+
