@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { apiFetch } from "../../utils/apiFetch";
 
 export default function LoginPage() {
   const [step, setStep] = useState("email");
@@ -15,7 +16,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/jwt/send-otp", {
+      const response = await apiFetch("/api/jwt/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -46,7 +47,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/jwt/verify-otp", {
+      const response = await apiFetch("/api/jwt/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code: otp }),
