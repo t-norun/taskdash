@@ -23,7 +23,7 @@ export default defineConfig({
     target: 'es2022',
   },
   ssr: {
-    target: 'node18',
+    target: 'node',
   },
 
   // Keep them available via import.meta.env.NEXT_PUBLIC_*
@@ -103,5 +103,13 @@ export default defineConfig({
     warmup: {
       clientFiles: ['./src/app/**/*', './src/app/root.tsx', './src/app/routes.ts'],
     },
+    proxy: {
+      "/api": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        secure: false
+      }
+    }
   },
 });
+ 
