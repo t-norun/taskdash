@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiFetch } from "../../utils/apiFetch";
 
 export default function LoginPage() {
   const [step, setStep] = useState("email");
@@ -8,6 +9,12 @@ export default function LoginPage() {
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/api/health")
+      .then((data) => console.log("HEALTH", data))
+      .catch((err) => console.error("HEALTH_ERR", err));
+  }, []);
 
   const handleSendOTP = async (e) => {
     e.preventDefault();

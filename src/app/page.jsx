@@ -15,6 +15,7 @@ import {
   getUser,
   isAuthenticated,
 } from "@/utils/auth";
+import { apiFetch } from "../../apps/web/src/utils/apiFetch";
 
 export default function HomePage() {
   const [user, setUser] = useState(null);
@@ -40,6 +41,9 @@ export default function HomePage() {
       "Access token exists:",
       !!localStorage.getItem("taskdash_access_token"),
     );
+
+    // Test apiFetch
+    apiFetch("/api/health").then(console.log);
 
     checkAuth();
 

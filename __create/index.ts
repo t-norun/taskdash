@@ -213,11 +213,10 @@ app.use('/api/auth/*', async (c, next) => {
 });
 
 // ✅ 追加：/api/* を別プロセスの API(3000) に転送
-// 例：/api/health -> http://localhost:3000/health
+// 例：/api/health -> http://localhost:3000/api/health
 app.all("/api/*", (c) => {
   const url = new URL(c.req.url);
-  const path = url.pathname.replace(/^\/api/, "") || "/";
-  const target = `http://localhost:3000${path}${url.search}`;
+  const target = `http://localhost:3000${url.pathname}${url.search}`;
   return proxy(target);
 });
 
