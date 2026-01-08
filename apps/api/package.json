@@ -1,12 +1,15 @@
-﻿{
+{
   "name": "taskdash-api",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node src/index.js"
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
   },
   "dependencies": {
-    "hono": "^4.10.3",
-    "@hono/node-server": "^1.19.5"
+    "@hono/node-server": "^1.19.5",
+    "@neondatabase/serverless": "^1.0.2",
+    "dotenv": "^17.2.3",
+    "hono": "^4.10.3"
   }
 }
