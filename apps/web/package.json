@@ -1,0 +1,8 @@
+{
+  "name": "taskdash-web",
+  "private": true,
+  "scripts": {
+    "build": "react-router build && node -e \"const fs=require('fs');const path=require('path');const src='build/client';const dst='build';function cp(s,d){for(const e of fs.readdirSync(s,{withFileTypes:true})){const a=path.join(s,e.name),b=path.join(d,e.name);if(e.isDirectory()){fs.mkdirSync(b,{recursive:true});cp(a,b);}else{fs.copyFileSync(a,b);}}} if(!fs.existsSync(src)) throw new Error('missing '+src); fs.mkdirSync(dst,{recursive:true}); cp(src,dst); console.log('copied',src,'->',dst);\""
+  },
+  "dependencies": {}
+}
