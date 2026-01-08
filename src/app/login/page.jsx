@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "../../utils/apiFetch";
 
 export default function LoginPage() {
   const [step, setStep] = useState("email");
@@ -15,30 +14,32 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    try {
-      const response = await apiFetch("/api/jwt/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
+    // try {
+    //   const response = await apiFetch("/api/jwt/send-otp", {
+    //     method: "POST",
+    //     headers: { "Content-Type": "application/json" },
+    //     body: JSON.stringify({ email }),
+    //   });
 
-      const data = await response.json();
+    //   const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to send code");
-      }
+    //   if (!response.ok) {
+    //     throw new Error(data.error || "Failed to send code");
+    //   }
 
-      // Development mode: log the code to console only
-      if (data.devCode) {
-        console.log(`🔐 Development OTP Code: ${data.devCode}`);
-      }
+    //   // Development mode: log the code to console only
+    //   if (data.devCode) {
+    //     console.log(`🔐 Development OTP Code: ${data.devCode}`);
+    //   }
 
-      setStep("otp");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    //   setStep("otp");
+    // } catch (err) {
+    //   setError(err.message);
+    // } finally {
+    //   setLoading(false);
+    // }
+    setStep("otp");
+    setLoading(false);
   };
 
   const handleVerifyOTP = async (e) => {
