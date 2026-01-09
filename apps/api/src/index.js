@@ -25,6 +25,9 @@ app.use(
 app.get("/", (c) => c.json({ ok: true, service: "taskdash-api" }));
 app.get("/healthz", (c) => c.text("ok"));
 app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
+app.get("/api/tasks/health", (c) => {
+  return c.json({ ok: true, service: "tasks", ts: Date.now() });
+});
 app.get("/ver", (c) => c.json({ ver: process.env.VER ?? "dev" }));
 
 // ✅ DB確認（DATABASE_URL が入ってる時だけ動く）
