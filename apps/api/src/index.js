@@ -29,25 +29,37 @@ app.get("/api/tasks/health", (c) => {
   return c.json({ ok: true, service: "tasks", ts: Date.now() });
 });
 app.get("/api/tasks", async (c) => {
+  const limitRaw = c.req.query("limit");
+  const offsetRaw = c.req.query("offset");
+
+  const limit = limitRaw == null ? 20 : Number(limitRaw);
+  const offset = offsetRaw == null ? 0 : Number(offsetRaw);
+
+  // バリデーション
+  if (!Number.isInteger(limit) || !Number.isInteger(offset) || limit < 1 || offset < 0) {
+    return c.json(
+      { ok: false, error: "limit/offset must be integers (limit>=1, offset>=0)" },
+      400
+    );
+  }
+
+  const safeLimit = Math.min(limit, 100);
+
   try {
-    const url = process.env.DATABASE_URL;
-    if (!url) return c.json({ ok: false, error: "DATABASE_URL is missing" }, 500);
+    const sql = neon(process.env.DATABASE_URL);
 
-    const sql = neon(url);
-
-    // ✅ DDL禁止：SELECTのみ実行
-    // テーブルが存在しない場合はエラーが自動的に返される
     const tasks = await sql`
       SELECT id, title, status, reward_yen, created_at
       FROM tasks
-      ORDER BY id DESC
-      LIMIT 200
+      ORDER BY created_at DESC
+      LIMIT ${safeLimit}
+      OFFSET ${offset}
     `;
 
-    return c.json({ ok: true, tasks });
+    return c.json({ ok: true, tasks, limit: safeLimit, offset }, 200);
   } catch (e) {
-    console.error("Error fetching tasks:", e);
-    return c.json({ ok: false, error: String(e) }, 500);
+    console.error("GET /api/tasks failed:", e);
+    return c.json({ ok: false, error: "internal_error" }, 500);
   }
 });
 app.get("/ver", (c) => c.json({ ver: "deded1c-dbinfo" }));
