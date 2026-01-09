@@ -30,10 +30,21 @@ app.get("/api/tasks/health", (c) => {
 });
 app.get("/api/tasks", async (c) => {
   try {
-    const sql = neon(process.env.DATABASE_URL);
-    const rows = await sql`select now() as server_time`;
-    return c.json({ ok: true, tasks: [], meta: rows[0] });
+    const url = process.env.DATABASE_URL;
+    if (!url) return c.json({ ok: false, error: "DATABASE_URL is missing" }, 500);
+
+    const sql = neon(url);
+
+    const tasks = await sql`
+      SELECT id, title, status, reward_yen, created_at
+      FROM tasks
+      ORDER BY id DESC
+      LIMIT 200
+    `;
+
+    return c.json({ ok: true, tasks });
   } catch (e) {
+    console.error(e);
     return c.json({ ok: false, error: String(e) }, 500);
   }
 });
