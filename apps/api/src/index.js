@@ -63,7 +63,7 @@ app.get("/api/tasks", async (c) => {
     return c.json({ ok: false, error: String(e) }, 500);
   }
 });
-app.get("/ver", (c) => c.json({ ver: process.env.VER ?? "dev" }));
+app.get("/ver", (c) => c.json({ ver: "deded1c-dbinfo" }));
 
 // ✅ DB確認（DATABASE_URL が入ってる時だけ動く）
 app.get("/debug/db", async (c) => {
