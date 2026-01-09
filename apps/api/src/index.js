@@ -8,6 +8,7 @@ const app = new Hono();
 // ✅ まず「生きてる」確認用（絶対200にする）
 app.get("/", (c) => c.json({ ok: true, service: "taskdash-api" }));
 app.get("/healthz", (c) => c.text("ok"));
+app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
 app.get("/ver", (c) => c.json({ ver: process.env.VER ?? "dev" }));
 
 // ✅ DB確認（DATABASE_URL が入ってる時だけ動く）
