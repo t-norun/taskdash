@@ -35,21 +35,8 @@ app.get("/api/tasks", async (c) => {
 
     const sql = neon(url);
 
-    await sql`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id BIGSERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        status TEXT NOT NULL DEFAULT 'open',
-        reward_yen INTEGER NOT NULL DEFAULT 0
-      )
-    `;
-
-    await sql`
-      INSERT INTO tasks (title)
-      SELECT '最初のタスク' WHERE NOT EXISTS (SELECT 1 FROM tasks)
-    `;
-
+    // ✅ DDL禁止：SELECTのみ実行
+    // テーブルが存在しない場合はエラーが自動的に返される
     const tasks = await sql`
       SELECT id, title, status, reward_yen, created_at
       FROM tasks
@@ -59,7 +46,7 @@ app.get("/api/tasks", async (c) => {
 
     return c.json({ ok: true, tasks });
   } catch (e) {
-    console.error(e);
+    console.error("Error fetching tasks:", e);
     return c.json({ ok: false, error: String(e) }, 500);
   }
 });
