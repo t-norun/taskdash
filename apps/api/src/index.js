@@ -1,9 +1,17 @@
 ﻿import "dotenv/config";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { neon } from "@neondatabase/serverless";
 
 const app = new Hono();
+
+app.use(
+  "/*",
+  cors({
+    origin: "*",
+  })
+);
 
 // ✅ まず「生きてる」確認用（絶対200にする）
 app.get("/", (c) => c.json({ ok: true, service: "taskdash-api" }));
