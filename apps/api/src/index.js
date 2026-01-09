@@ -75,6 +75,41 @@ app.get("/debug/db", async (c) => {
   return c.json({ ok: true, now: r?.[0]?.now ?? null });
 });
 
+app.get("/debug/dbinfo", async (c) => {
+  try {
+    const url = process.env.DATABASE_URL;
+    if (!url) return c.json({ ok: false, error: "DATABASE_URL is missing" }, 500);
+
+    const sql = neon(url);
+
+    // DB/スキーマ/接続先確認
+    const info = await sql`
+      SELECT
+        current_database() AS db,
+        current_schema() AS schema,
+        current_user AS user,
+        inet_server_addr()::text AS server_ip
+    `;
+
+    // publicのテーブル一覧
+    const tables = await sql`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+      ORDER BY table_name
+    `;
+
+    return c.json({
+      ok: true,
+      info: info[0],
+      tables: tables.map((t) => t.table_name),
+    });
+  } catch (e) {
+    console.error(e);
+    return c.json({ ok: false, error: String(e) }, 500);
+  }
+});
+
 app.get("/db-check", async (c) => {
   try {
     const sql = neon(process.env.DATABASE_URL);
