@@ -51,7 +51,7 @@ app.get("/api/tasks", async (c) => {
     const tasks = await sql`
       SELECT id, title, status, reward_yen, created_at
       FROM tasks
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT ${safeLimit}
       OFFSET ${offset}
     `;
