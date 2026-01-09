@@ -37,6 +37,16 @@ app.get("/debug/db", async (c) => {
   return c.json({ ok: true, now: r?.[0]?.now ?? null });
 });
 
+app.get("/db-check", async (c) => {
+  try {
+    const sql = neon(process.env.DATABASE_URL);
+    const result = await sql`select 1 as ok`;
+    return c.json({ ok: true, result });
+  } catch (e) {
+    return c.json({ ok: false, error: String(e) }, 500);
+  }
+});
+
 // ✅ それでも迷子にならないための最終手段
 app.notFound((c) => c.json({ ok: false, error: "not found", path: c.req.path }, 404));
 
