@@ -28,6 +28,15 @@ app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
 app.get("/api/tasks/health", (c) => {
   return c.json({ ok: true, service: "tasks", ts: Date.now() });
 });
+app.get("/api/tasks", async (c) => {
+  try {
+    const sql = neon(process.env.DATABASE_URL);
+    const rows = await sql`select now() as server_time`;
+    return c.json({ ok: true, tasks: [], meta: rows[0] });
+  } catch (e) {
+    return c.json({ ok: false, error: String(e) }, 500);
+  }
+});
 app.get("/ver", (c) => c.json({ ver: process.env.VER ?? "dev" }));
 
 // ✅ DB確認（DATABASE_URL が入ってる時だけ動く）
