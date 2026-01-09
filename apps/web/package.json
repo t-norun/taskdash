@@ -1,8 +1,19 @@
 {
   "name": "taskdash-web",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "react-router build && node -e \"const fs=require('fs');const path=require('path');const src='build/client';const dst='build';function cp(s,d){for(const e of fs.readdirSync(s,{withFileTypes:true})){const a=path.join(s,e.name),b=path.join(d,e.name);if(e.isDirectory()){fs.mkdirSync(b,{recursive:true});cp(a,b);}else{fs.copyFileSync(a,b);}}} if(!fs.existsSync(src)) throw new Error('missing '+src); fs.mkdirSync(dst,{recursive:true}); cp(src,dst); console.log('copied',src,'->',dst);\""
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
-  "dependencies": {}
+  "dependencies": {
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
 }
