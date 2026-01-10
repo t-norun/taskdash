@@ -3,6 +3,7 @@ import React from "react";
 
 import { apiBase, apiGet } from "./lib/api";
 import TaskCard, { Task } from "./components/TaskCard";
+import { useState } from "react";
 
 function toJST(iso: string) {
   const d = new Date(iso);
@@ -24,6 +25,23 @@ export default function App() {
   const [ping, setPing] = React.useState<string>("loading...");
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [error, setError] = React.useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all"); // "all" | "open" | "closed"
+
+  // 正規化関数
+  const normalizeStatus = (s: string) => String(s ?? "").toLowerCase();
+
+  // フィルタリング
+  const filteredTasks = (tasks ?? []).filter((t) => {
+    const st = normalizeStatus(t.status);
+    if (statusFilter === "all") return true;
+    if (statusFilter === "open") {
+      return ["open", "opened", "active", "todo", "in_progress"].includes(st);
+    }
+    if (statusFilter === "closed") {
+      return ["closed", "done", "completed", "complete", "resolved"].includes(st);
+    }
+    return true;
+  });
 
   function handleClickTask(task: Task) {
     // Step A-2：まずは確認用
@@ -68,9 +86,55 @@ export default function App() {
 
       <h2>Tasks</h2>
 
+      {/* フィルタボタン */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button
+          onClick={() => setStatusFilter("all")}
+          aria-pressed={statusFilter === "all"}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: statusFilter === "all" ? "rgba(255,255,255,0.12)" : "transparent",
+            color: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setStatusFilter("open")}
+          aria-pressed={statusFilter === "open"}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: statusFilter === "open" ? "rgba(255,255,255,0.12)" : "transparent",
+            color: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          Open
+        </button>
+        <button
+          onClick={() => setStatusFilter("closed")}
+          aria-pressed={statusFilter === "closed"}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: statusFilter === "closed" ? "rgba(255,255,255,0.12)" : "transparent",
+            color: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          Closed
+        </button>
+      </div>
+
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
 
-      {tasks.length === 0 ? (
+      {filteredTasks.length === 0 ? (
         <p>タスクがありません</p>
       ) : (
         <div
@@ -80,7 +144,7 @@ export default function App() {
             gap: 16,
           }}
         >
-          {tasks.map((t) => (
+          {filteredTasks.map((t) => (
             <TaskCard
               key={t.id}
               task={t}
