@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiBase, apiGet } from "./lib/api";
 import TaskCard, { Task } from "./components/TaskCard";
 
@@ -47,6 +48,8 @@ export default function TaskListPage() {
       cancelled = true;
     };
   }, []);
+
+  const navigate = useNavigate();
 
   return (
     <div style={{ fontFamily: "system-ui", padding: 24 }}>
@@ -123,7 +126,7 @@ export default function TaskListPage() {
             <TaskCard
               key={t.id}
               task={t}
-              // onClick は後でRouter対応
+              onClick={() => navigate(`/tasks/${t.id}`)}
             />
           ))}
         </div>
