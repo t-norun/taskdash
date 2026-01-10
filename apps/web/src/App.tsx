@@ -1,14 +1,8 @@
 // apps/web/src/App.tsx
 import React from "react";
-import { apiBase, apiGet } from "./lib/api";
 
-type Task = {
-  id: string;
-  title: string;
-  status: string;
-  reward_yen: number;
-  created_at: string; // ISO
-};
+import { apiBase, apiGet } from "./lib/api";
+import TaskCard, { Task } from "./components/TaskCard";
 
 function toJST(iso: string) {
   const d = new Date(iso);
@@ -73,36 +67,17 @@ export default function App() {
       {tasks.length === 0 ? (
         <p>タスクがありません</p>
       ) : (
-        <table
+        <div
           style={{
-            borderCollapse: "collapse",
-            width: "100%",
-            maxWidth: 900,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gap: 16,
           }}
         >
-          <thead>
-            <tr>
-              <th style={th}>ID</th>
-              <th style={th}>タイトル</th>
-              <th style={th}>ステータス</th>
-              <th style={th}>作成日時（JST）</th>
-              <th style={th}>報酬</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tasks.map((t) => (
-              <tr key={t.id}>
-                <td style={td}>{t.id}</td>
-                <td style={td}>{t.title}</td>
-                <td style={td}>{t.status}</td>
-                <td style={td}>{toJST(t.created_at)}</td>
-                <td style={{ ...td, textAlign: "right" }}>
-                  {t.reward_yen.toLocaleString()} 円
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          {tasks.map((t) => (
+            <TaskCard key={t.id} task={t} />
+          ))}
+        </div>
       )}
     </div>
   );
