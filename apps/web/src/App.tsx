@@ -25,6 +25,12 @@ export default function App() {
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [error, setError] = React.useState<string | null>(null);
 
+  function handleClickTask(task: Task) {
+    // Step A-2：まずは確認用
+    // 次の Step C で Router に置き換える
+    alert(`Task clicked\nID: ${task.id}\nTitle: ${task.title}`);
+  }
+
   React.useEffect(() => {
     let cancelled = false;
 
@@ -75,7 +81,7 @@ export default function App() {
           }}
         >
           {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} />
+            <TaskCard key={t.id} task={t} onClick={handleClickTask} />
           ))}
         </div>
       )}
