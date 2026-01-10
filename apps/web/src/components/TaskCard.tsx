@@ -49,21 +49,11 @@ export default function TaskCard({
     <div
       style={{
         ...card,
-        cursor: onClick ? "pointer" : "default",
-        transition: "box-shadow 0.15s, transform 0.15s",
+        cursor: "pointer",
       }}
-      onClick={() => onClick?.(task)}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow =
-          "0 6px 16px rgba(0,0,0,0.08)";
-        (e.currentTarget as HTMLDivElement).style.transform =
-          "translateY(-2px)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow =
-          "0 1px 2px rgba(0,0,0,0.04)";
-        (e.currentTarget as HTMLDivElement).style.transform =
-          "translateY(0)";
+      onClick={() => {
+        console.log("clicked", task.id);
+        onClick?.(task);
       }}
     >
       <div style={header}>

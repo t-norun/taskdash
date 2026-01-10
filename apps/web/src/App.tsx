@@ -81,7 +81,13 @@ export default function App() {
           }}
         >
           {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} onClick={handleClickTask} />
+            <TaskCard
+              key={t.id}
+              task={t}
+              onClick={(task) => {
+                alert(`Task clicked\nID: ${task.id}\nTitle: ${task.title}`);
+              }}
+            />
           ))}
         </div>
       )}
