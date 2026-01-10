@@ -30,7 +30,7 @@ export default function TaskDetailPage() {
       setTask(null);
 
       try {
-        const res = await fetch(`${API_BASE}/tasks/${id}`);
+        const res = await fetch(`${API_BASE}/api/tasks/${id}`);
         const data = await res.json();
 
         if (!res.ok || !data?.ok) {
