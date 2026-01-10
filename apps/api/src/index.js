@@ -6,28 +6,6 @@ import { neon } from "@neondatabase/serverless";
 
 const app = new Hono();
 
-app.use("*", async (c, next) => {
-  c.header("Access-Control-Allow-Origin", "https://taskdash-1.onrender.com");
-  c.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (c.req.method === "OPTIONS") return c.text("", 204);
-  await next();
-});
-
-app.use(
-  "/*",
-  cors({
-    origin: "*",
-  })
-);
-
-// ✅ まず「生きてる」確認用（絶対200にする）
-app.get("/", (c) => c.json({ ok: true, service: "taskdash-api" }));
-app.get("/healthz", (c) => c.text("ok"));
-app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
-app.get("/api/tasks/health", (c) => {
-  return c.json({ ok: true, service: "tasks", ts: Date.now() });
-});
 app.get("/api/tasks", async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
   const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
@@ -63,6 +41,18 @@ app.get("/api/tasks/:id", async (c) => {
       WHERE id = ${id}
       LIMIT 1
     `;
+
+    const task = rows[0];
+    if (!task) {
+      return c.json({ ok: false, error: "not found" }, 404);
+    }
+
+    return c.json({ ok: true, task });
+  } catch (err) {
+    console.error("GET /api/tasks/:id failed:", err);
+    return c.json({ ok: false, error: "internal error" }, 500);
+  }
+});
 
     const task = rows[0];
     if (!task) {
