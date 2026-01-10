@@ -29,6 +29,29 @@ app.get("/api/tasks/health", (c) => {
   return c.json({ ok: true, service: "tasks", ts: Date.now() });
 });
 app.get("/api/tasks", async (c) => {
+  // GET /api/tasks/:id 単体取得
+  app.get("/api/tasks/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) {
+      return c.json({ ok: false, error: "invalid id" }, 400);
+    }
+
+    const sql = neon(process.env.DATABASE_URL);
+
+    const rows = await sql`
+      SELECT id, title, status, reward_yen, created_at
+      FROM tasks
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+
+    const task = rows?.[0];
+    if (!task) {
+      return c.json({ ok: false, error: "not found" }, 404);
+    }
+
+    return c.json({ ok: true, task });
+  });
   const limitRaw = c.req.query("limit");
   const offsetRaw = c.req.query("offset");
 
