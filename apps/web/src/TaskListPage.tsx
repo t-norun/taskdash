@@ -10,6 +10,7 @@ export default function TaskListPage() {
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all"); // "all" | "open" | "closed"
+  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
 
   // 正規化関数
   const normalizeStatus = (s: string) => String(s ?? "").toLowerCase();
@@ -128,12 +129,53 @@ export default function TaskListPage() {
             <TaskCard
               key={t.id}
               task={t}
-              apiBase={API_BASE_URL}
               onClick={() => navigate(`/tasks/${t.id}`)}
-              onStatusChanged={(id, nextStatus) => {
+              disabled={updatingIds.has(t.id)}
+              onToggleStatus={async (taskId) => {
+                if (updatingIds.has(taskId)) return;
+
+                const current = tasks.find((x) => x.id === taskId);
+                if (!current) return;
+
+                const prevStatus = current.status;
+                const nextStatus = prevStatus === "open" ? "closed" : "open";
+
+                // PATCH中フラグON
+                setUpdatingIds((s) => new Set(s).add(taskId));
+
+                // ✅ Optimistic: 先に一覧を更新
                 setTasks((prev) =>
-                  prev.map((x) => (x.id === id ? { ...x, status: nextStatus } : x))
+                  prev.map((x) => (x.id === taskId ? { ...x, status: nextStatus } : x))
                 );
+
+                try {
+                  const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: nextStatus }),
+                  });
+
+                  const data = await res.json();
+
+                  if (!res.ok || !data?.ok) {
+                    throw new Error(data?.error ?? `HTTP ${res.status}`);
+                  }
+
+                  // ✅ 成功: 何もしない（もう反映済み）
+                } catch (e: any) {
+                  // ✅ 失敗: ロールバック
+                  setTasks((prev) =>
+                    prev.map((x) => (x.id === taskId ? { ...x, status: prevStatus } : x))
+                  );
+                  alert(e?.message ?? "更新に失敗しました（ロールバックしました）");
+                } finally {
+                  // PATCH中フラグOFF
+                  setUpdatingIds((s) => {
+                    const n = new Set(s);
+                    n.delete(taskId);
+                    return n;
+                  });
+                }
               }}
             />
           ))}

@@ -87,8 +87,11 @@ export default function TaskDetailPage() {
   async function onToggleStatus() {
     if (!id || !task) return;
 
+    const prev = task;
     const nextStatus = task.status === "open" ? "closed" : "open";
 
+    // ✅ 先にUI更新（Optimistic）
+    setTask({ ...task, status: nextStatus });
     setMutating(true);
     setError(null);
 
@@ -105,9 +108,12 @@ export default function TaskDetailPage() {
         throw new Error(data?.error ?? `HTTP ${res.status}`);
       }
 
-      // ✅確実ルート：PATCH成功 → 再GETで同期
-      await fetchTask(id);
+      // ✅ 成功：何もしなくてOK（すでにUI更新済み）
+      // ただし、サーバー側で正規化される可能性があるなら
+      // setTask(data.task) にしてもOK（APIがtask返す場合）
     } catch (e: any) {
+      // ✅ 失敗：ロールバック
+      setTask(prev);
       setError(e?.message ?? "patch failed");
     } finally {
       setMutating(false);

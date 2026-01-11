@@ -40,42 +40,15 @@ function statusStyle(status: string): React.CSSProperties {
 
 export default function TaskCard({
   task,
-  apiBase,
   onClick,
-  onStatusChanged,
+  onToggleStatus,
+  disabled,
 }: {
   task: Task;
-  apiBase: string; // ★追加（例: "https://taskdash-api.onrender.com"）
   onClick?: (task: Task) => void;
-  onStatusChanged?: (taskId: string, nextStatus: "open" | "closed") => void; // ★追加
+  onToggleStatus?: (taskId: string) => void;
+  disabled?: boolean;
 }) {
-  async function toggleStatus() {
-    const nextStatus: "open" | "closed" =
-      task.status === "closed" ? "open" : "closed";
-
-    try {
-      const res = await fetch(`${apiBase}/api/tasks/${task.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        console.error("PATCH failed", res.status, data);
-        alert(`更新失敗: ${res.status}`);
-        return;
-      }
-
-      console.log("updated", data);
-      onStatusChanged?.(task.id, nextStatus);
-    } catch (e) {
-      console.error(e);
-      alert("通信失敗");
-    }
-  }
-
   return (
     <div
       style={{
@@ -104,16 +77,17 @@ export default function TaskCard({
       <button
         type="button"
         onClick={(e) => {
-          e.stopPropagation(); // ★これ超重要（カード遷移を止める）
-          toggleStatus();
+          e.stopPropagation();
+          onToggleStatus?.(task.id);
         }}
+        disabled={disabled}
         style={{
           marginTop: 12,
           padding: "6px 10px",
           border: "1px solid #ddd",
           borderRadius: 8,
           background: "white",
-          cursor: "pointer",
+          cursor: disabled ? "not-allowed" : "pointer",
           fontSize: 12,
         }}
       >
