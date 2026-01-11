@@ -40,11 +40,42 @@ function statusStyle(status: string): React.CSSProperties {
 
 export default function TaskCard({
   task,
+  apiBase,
   onClick,
+  onStatusChanged,
 }: {
   task: Task;
+  apiBase: string; // ★追加（例: "https://taskdash-api.onrender.com"）
   onClick?: (task: Task) => void;
+  onStatusChanged?: (taskId: string, nextStatus: "open" | "closed") => void; // ★追加
 }) {
+  async function toggleStatus() {
+    const nextStatus: "open" | "closed" =
+      task.status === "closed" ? "open" : "closed";
+
+    try {
+      const res = await fetch(`${apiBase}/api/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        console.error("PATCH failed", res.status, data);
+        alert(`更新失敗: ${res.status}`);
+        return;
+      }
+
+      console.log("updated", data);
+      onStatusChanged?.(task.id, nextStatus);
+    } catch (e) {
+      console.error(e);
+      alert("通信失敗");
+    }
+  }
+
   return (
     <div
       style={{
@@ -67,13 +98,15 @@ export default function TaskCard({
 
       <div style={footer}>
         <span style={id}>ID: {task.id}</span>
-        <span style={reward}>
-          {task.reward_yen.toLocaleString()} 円
-        </span>
+        <span style={reward}>{task.reward_yen.toLocaleString()} 円</span>
       </div>
+
       <button
         type="button"
-        onClick={() => alert(`TODO: toggle status id=${task.id}`)}
+        onClick={(e) => {
+          e.stopPropagation(); // ★これ超重要（カード遷移を止める）
+          toggleStatus();
+        }}
         style={{
           marginTop: 12,
           padding: "6px 10px",

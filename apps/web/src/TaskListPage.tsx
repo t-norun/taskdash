@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiBase, apiGet } from "./lib/api";
+// API_BASE_URL: .env等で未定義ならここで仮定義
+const API_BASE_URL = typeof apiBase === "string" ? apiBase : "https://taskdash-api.onrender.com";
 import TaskCard, { Task } from "./components/TaskCard";
 
 export default function TaskListPage() {
@@ -126,7 +128,13 @@ export default function TaskListPage() {
             <TaskCard
               key={t.id}
               task={t}
+              apiBase={API_BASE_URL}
               onClick={() => navigate(`/tasks/${t.id}`)}
+              onStatusChanged={(id, nextStatus) => {
+                setTasks((prev) =>
+                  prev.map((x) => (x.id === id ? { ...x, status: nextStatus } : x))
+                );
+              }}
             />
           ))}
         </div>
