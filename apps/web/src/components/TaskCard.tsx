@@ -71,6 +71,21 @@ export default function TaskCard({
           {task.reward_yen.toLocaleString()} 円
         </span>
       </div>
+      <button
+        type="button"
+        onClick={() => alert(`TODO: toggle status id=${task.id}`)}
+        style={{
+          marginTop: 12,
+          padding: "6px 10px",
+          border: "1px solid #ddd",
+          borderRadius: 8,
+          background: "white",
+          cursor: "pointer",
+          fontSize: 12,
+        }}
+      >
+        {task.status === "closed" ? "Reopen" : "Close"}
+      </button>
     </div>
   );
 }
