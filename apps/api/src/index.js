@@ -42,7 +42,7 @@ app.get("/api/tasks/:id", async (c) => {
       LIMIT 1
     `;
 
-    const task = rows[0];
+    const task = rows?.[0];
     if (!task) {
       return c.json({ ok: false, error: "not found" }, 404);
     }
@@ -54,17 +54,7 @@ app.get("/api/tasks/:id", async (c) => {
   }
 });
 
-    const task = rows[0];
-    if (!task) {
-      return c.json({ ok: false, error: "not found" }, 404);
-    }
-
-    return c.json({ ok: true, task });
-  } catch (err) {
-    console.error("GET /api/tasks/:id failed:", err);
-    return c.json({ ok: false, error: "internal error" }, 500);
-  }
-});
+    // ...existing code...
 app.get("/ver", (c) => c.json({ ver: "deded1c-dbinfo" }));
 
 // ✅ DB確認（DATABASE_URL が入ってる時だけ動く）
