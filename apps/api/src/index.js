@@ -5,6 +5,10 @@ import { serve } from "@hono/node-server";
 import { neon } from "@neondatabase/serverless";
 
 const app = new Hono();
+// CORS設定（hono/corsのみ使用）
+app.use("*", cors({
+  origin: "https://taskdash-1.onrender.com",
+}));
 
 app.get("/api/tasks", async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
