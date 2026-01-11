@@ -1,4 +1,44 @@
-﻿import "dotenv/config";
+﻿// POST /api/tasks 新規作成
+app.post("/api/tasks", async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "invalid json" }, 400);
+  }
+
+  const titleRaw = body?.title;
+  const rewardRaw = body?.reward_yen;
+
+  const title = typeof titleRaw === "string" ? titleRaw.trim() : "";
+  if (!title) return c.json({ ok: false, error: "title is required" }, 400);
+  if (title.length > 200) return c.json({ ok: false, error: "title is too long (max 200)" }, 400);
+
+  let reward_yen = 0;
+  if (rewardRaw !== undefined) {
+    const n = Number(rewardRaw);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      return c.json({ ok: false, error: "reward_yen must be a non-negative integer" }, 400);
+    }
+    reward_yen = n;
+  }
+
+  const sql = neon(process.env.DATABASE_URL);
+
+  try {
+    const rows = await sql`
+      INSERT INTO tasks (title, status, reward_yen)
+      VALUES (${title}, 'open', ${reward_yen})
+      RETURNING id, title, status, reward_yen, created_at;
+    `;
+    const created = Array.isArray(rows) ? rows[0] : rows?.[0];
+    return c.json({ ok: true, task: created }, 201);
+  } catch (err) {
+    console.error("POST /api/tasks failed:", err);
+    return c.json({ ok: false, error: "db error" }, 500);
+  }
+});
+import "dotenv/config";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
@@ -10,55 +50,8 @@ app.use("*", cors({
   origin: "https://taskdash-1.onrender.com",
 }));
 
+
 app.get("/api/tasks", async (c) => {
-  // POST /api/tasks 新規作成
-  app.post("/api/tasks", async (c) => {
-    let body;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ ok: false, error: "invalid json" }, 400);
-    }
-
-    const titleRaw = body?.title;
-    const rewardRaw = body?.reward_yen;
-
-    // title: 必須（空文字NG）
-    const title = typeof titleRaw === "string" ? titleRaw.trim() : "";
-    if (!title) {
-      return c.json({ ok: false, error: "title is required" }, 400);
-    }
-    if (title.length > 200) {
-      return c.json({ ok: false, error: "title is too long (max 200)" }, 400);
-    }
-
-    // reward_yen: 任意（未指定なら0、数字以外はNG）
-    let reward_yen = 0;
-    if (rewardRaw !== undefined) {
-      const n = Number(rewardRaw);
-      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-        return c.json({ ok: false, error: "reward_yen must be a non-negative integer" }, 400);
-      }
-      reward_yen = n;
-    }
-
-    const sql = neon(process.env.DATABASE_URL);
-
-    try {
-      const rows = await sql`
-        INSERT INTO tasks (title, status, reward_yen)
-        VALUES (${title}, 'open', ${reward_yen})
-        RETURNING id, title, status, reward_yen, created_at;
-      `;
-
-      const created = Array.isArray(rows) ? rows[0] : rows?.[0];
-
-      return c.json({ ok: true, task: created }, 201);
-    } catch (err) {
-      console.error("POST /api/tasks failed:", err);
-      return c.json({ ok: false, error: "db error" }, 500);
-    }
-  });
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
   const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
 
