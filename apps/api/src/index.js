@@ -30,6 +30,45 @@ app.get("/api/tasks", async (c) => {
   }
 });
 
+// PATCH /api/tasks/:id ステータス更新
+app.patch("/api/tasks/:id", async (c) => {
+  const id = c.req.param("id");
+
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "invalid json" }, 400);
+  }
+
+  const status = body?.status;
+  if (status !== "open" && status !== "closed") {
+    return c.json({ ok: false, error: "status must be 'open' or 'closed'" }, 400);
+  }
+
+  const sql = neon(process.env.DATABASE_URL);
+  try {
+    const rows = await sql`
+      UPDATE tasks
+      SET status = ${status}
+      WHERE id = ${id}
+      RETURNING id, title, status, reward_yen, created_at;
+    `;
+
+    // neon の返り値が配列/オブジェクトどっちでも拾う
+    const updated = Array.isArray(rows) ? rows[0] : rows?.[0];
+
+    if (!updated) {
+      return c.json({ ok: false, error: "task not found", id }, 404);
+    }
+
+    return c.json({ ok: true, task: updated });
+  } catch (e) {
+    console.error(e);
+    return c.json({ ok: false, error: "db error" }, 500);
+  }
+});
+
 app.get("/api/tasks/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isFinite(id)) {
