@@ -112,6 +112,41 @@ app.get("/db-check", async (c) => {
   }
 });
 
+
+// ステータス更新API
+app.put("/api/tasks/:id/status", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) {
+    return c.json({ ok: false, error: "invalid id" }, 400);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const status = body?.status;
+
+  if (status !== "open" && status !== "closed") {
+    return c.json({ ok: false, error: "status must be 'open' or 'closed'" }, 400);
+  }
+
+  const sql = neon(process.env.DATABASE_URL);
+
+  try {
+    const rows = await sql`
+      UPDATE tasks
+      SET status = ${status}
+      WHERE id = ${id}
+      RETURNING id, title, status, reward_yen, created_at
+    `;
+
+    const task = rows?.[0];
+    if (!task) return c.json({ ok: false, error: "not found" }, 404);
+
+    return c.json({ ok: true, task });
+  } catch (err) {
+    console.error("PUT /api/tasks/:id/status failed:", err);
+    return c.json({ ok: false, error: "internal error" }, 500);
+  }
+});
+
 // ✅ それでも迷子にならないための最終手段
 app.notFound((c) => c.json({ ok: false, error: "not found", path: c.req.path }, 404));
 
