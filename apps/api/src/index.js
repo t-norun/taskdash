@@ -151,6 +151,7 @@ app.put("/api/tasks/:id/status", async (c) => {
   }
 });
 
+app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
 // ✅ それでも迷子にならないための最終手段
 app.notFound((c) => c.json({ ok: false, error: "not found", path: c.req.path }, 404));
 
