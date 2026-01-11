@@ -1,4 +1,17 @@
-﻿// POST /api/tasks 新規作成
+﻿import "dotenv/config";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serve } from "@hono/node-server";
+import { neon } from "@neondatabase/serverless";
+
+const app = new Hono();
+
+// CORS設定（hono/corsのみ使用）
+app.use("*", cors({
+  origin: "https://taskdash-1.onrender.com",
+}));
+
+// POST /api/tasks 新規作成
 app.post("/api/tasks", async (c) => {
   let body;
   try {
@@ -38,19 +51,8 @@ app.post("/api/tasks", async (c) => {
     return c.json({ ok: false, error: "db error" }, 500);
   }
 });
-import "dotenv/config";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { serve } from "@hono/node-server";
-import { neon } from "@neondatabase/serverless";
 
-const app = new Hono();
-// CORS設定（hono/corsのみ使用）
-app.use("*", cors({
-  origin: "https://taskdash-1.onrender.com",
-}));
-
-
+// GET /api/tasks
 app.get("/api/tasks", async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
   const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
