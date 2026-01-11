@@ -18,13 +18,43 @@ export default function TaskDetailPage() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
+  const [mutating, setMutating] = useState(false); // ★追加：PATCH中
   const [error, setError] = useState<string | null>(null);
   const [task, setTask] = useState<Task | null>(null);
+
+  // ★追加：GETを関数にして、初回＆PATCH後に再利用
+  async function fetchTask(taskId: string) {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/${taskId}`);
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+
+      setTask(data.task);
+    } catch (e: any) {
+      setError(e?.message ?? "fetch failed");
+      setTask(null);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
+      if (!id) {
+        setLoading(false);
+        setError("missing id");
+        return;
+      }
+
+      // fetchTask は state を触るので、cancelled ガードをここでやる
       setLoading(true);
       setError(null);
       setTask(null);
@@ -40,21 +70,52 @@ export default function TaskDetailPage() {
         if (!cancelled) setTask(data.task);
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? "fetch failed");
+        if (!cancelled) setTask(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    if (id) run();
-    else {
-      setLoading(false);
-      setError("missing id");
-    }
+    run();
 
     return () => {
       cancelled = true;
     };
   }, [id]);
+
+  // ★追加：Detail用の Close/Reopen ハンドラ
+  async function onToggleStatus() {
+    if (!id || !task) return;
+
+    const nextStatus = task.status === "open" ? "closed" : "open";
+
+    setMutating(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+
+      // ✅確実ルート：PATCH成功 → 再GETで同期
+      await fetchTask(id);
+    } catch (e: any) {
+      setError(e?.message ?? "patch failed");
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  const canToggle = !!task && !loading && !mutating;
+  const toggleLabel = task?.status === "open" ? "Close" : "Reopen";
 
   return (
     <div style={{ padding: 16 }}>
@@ -66,12 +127,45 @@ export default function TaskDetailPage() {
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
 
       {task && (
-        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
-          <div><b>ID:</b> {task.id}</div>
-          <div><b>Title:</b> {task.title}</div>
-          <div><b>Status:</b> {task.status}</div>
-          <div><b>Reward:</b> {task.reward_yen} 円</div>
-          <div><b>Created:</b> {new Date(task.created_at).toLocaleString()}</div>
+        <div
+          style={{
+            marginTop: 12,
+            border: "1px solid #ddd",
+            borderRadius: 12,
+            padding: 12,
+          }}
+        >
+          <div>
+            <b>ID:</b> {task.id}
+          </div>
+          <div>
+            <b>Title:</b> {task.title}
+          </div>
+          <div>
+            <b>Status:</b> {task.status}
+          </div>
+          <div>
+            <b>Reward:</b> {task.reward_yen} 円
+          </div>
+          <div>
+            <b>Created:</b> {new Date(task.created_at).toLocaleString()}
+          </div>
+
+          {/* ★追加：Close/Reopenボタン */}
+          <div style={{ marginTop: 12 }}>
+            <button
+              onClick={onToggleStatus}
+              disabled={!canToggle}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                cursor: canToggle ? "pointer" : "not-allowed",
+              }}
+            >
+              {mutating ? "Updating..." : toggleLabel}
+            </button>
+          </div>
         </div>
       )}
     </div>
