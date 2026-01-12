@@ -1,177 +1,180 @@
-import { useEffect, useState } from "react";
+import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { apiBase, apiGet } from "./lib/api";
+import TaskCard, { type Task } from "./components/TaskCard";
 
-type Task = {
-  id: number;
-  title: string;
-  status: string;
-  reward_yen: number;
-  created_at: string;
-};
-
-const API_BASE =
-  (import.meta as any).env?.VITE_API_BASE_URL ??
-  "https://taskdash-api.onrender.com";
+const API_BASE_URL =
+  typeof apiBase === "string" ? apiBase : "https://taskdash-api.onrender.com";
 
 export default function TaskDetailPage() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [loading, setLoading] = useState(true);
-  const [mutating, setMutating] = useState(false); // ★追加：PATCH中
-  const [error, setError] = useState<string | null>(null);
-  const [task, setTask] = useState<Task | null>(null);
+  const [task, setTask] = React.useState<Task | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [updating, setUpdating] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
 
-  // ★追加：GETを関数にして、初回＆PATCH後に再利用
-  async function fetchTask(taskId: string) {
-    setLoading(true);
-    setError(null);
+  // ===== Toast（一覧と同じ簡易版）=====
+  const [toast, setToast] = React.useState<{ msg: string; type?: "success" | "error" } | null>(null);
+  const timerRef = React.useRef<number | null>(null);
 
-    try {
-      const res = await fetch(`${API_BASE}/api/tasks/${taskId}`);
-      const data = await res.json();
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    setToast({ msg, type });
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
+      setToast(null);
+      timerRef.current = null;
+    }, 2500);
+  };
+  // ====================================
 
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error ?? `HTTP ${res.status}`);
-      }
-
-      setTask(data.task);
-    } catch (e: any) {
-      setError(e?.message ?? "fetch failed");
-      setTask(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
+  // 1件取得
+  React.useEffect(() => {
     let cancelled = false;
 
-    async function run() {
-      if (!id) {
-        setLoading(false);
-        setError("missing id");
-        return;
-      }
-
-      // fetchTask は state を触るので、cancelled ガードをここでやる
-      setLoading(true);
-      setError(null);
-      setTask(null);
-
+    (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/tasks/${id}`);
-        const data = await res.json();
+        if (!id) throw new Error("id is missing");
 
-        if (!res.ok || !data?.ok) {
-          throw new Error(data?.error ?? `HTTP ${res.status}`);
-        }
+        // ✅ 推奨：GET /api/tasks/:id があるならそれを使う
+        // const d = await apiGet<any>(`/api/tasks/${id}`);
+        // if (!d?.ok) throw new Error(d?.error ?? "API error");
+        // if (!cancelled) setTask(d.task);
 
-        if (!cancelled) setTask(data.task);
+        // ✅ もし /api/tasks/:id がまだ無いなら、一覧から探す暫定策（limit大きめ）
+        const d = await apiGet<any>("/api/tasks?limit=200&offset=0");
+        if (!d?.ok) throw new Error("API error: ok=false");
+
+        const found = (d.tasks ?? []).find((t: Task) => String(t.id) === String(id));
+        if (!found) throw new Error("タスクが見つかりません");
+        if (!cancelled) setTask(found);
       } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? "fetch failed");
-        if (!cancelled) setTask(null);
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setError(String(e?.message ?? e));
       }
-    }
-
-    run();
+    })();
 
     return () => {
       cancelled = true;
+      if (timerRef.current) window.clearTimeout(timerRef.current);
     };
   }, [id]);
 
-  // ★追加：Detail用の Close/Reopen ハンドラ
-  async function onToggleStatus() {
-    if (!id || !task) return;
+  // 更新（Save）
+  const handleUpdate = async (taskId: string, patch: { title: string; reward_yen: number }) => {
+    if (!task) return;
+    if (updating) return;
 
-    const prev = task;
-    const nextStatus = task.status === "open" ? "closed" : "open";
-
-    // ✅ 先にUI更新（Optimistic）
-    setTask({ ...task, status: nextStatus });
-    setMutating(true);
-    setError(null);
-
+    setUpdating(true);
     try {
-      const res = await fetch(`${API_BASE}/api/tasks/${id}`, {
-        method: "PATCH",
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify(patch),
       });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
 
-      const data = await res.json();
-
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error ?? `HTTP ${res.status}`);
-      }
-
-      // ✅ 成功：何もしなくてOK（すでにUI更新済み）
-      // ただし、サーバー側で正規化される可能性があるなら
-      // setTask(data.task) にしてもOK（APIがtask返す場合）
+      const updated = json.task ?? json;
+      setTask(updated);
+      showToast("保存しました", "success");
     } catch (e: any) {
-      // ✅ 失敗：ロールバック
-      setTask(prev);
-      setError(e?.message ?? "patch failed");
+      showToast(e?.message ?? "保存に失敗しました", "error");
     } finally {
-      setMutating(false);
+      setUpdating(false);
     }
-  }
+  };
 
-  const canToggle = !!task && !loading && !mutating;
-  const toggleLabel = task?.status === "open" ? "Close" : "Reopen";
+  // 削除
+  const handleDelete = async (taskId: string) => {
+    if (!task) return;
+    if (deleting) return;
+
+    const ok = window.confirm(`このタスクを削除しますか？\n\n${task.title}`);
+    if (!ok) return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+
+      showToast("削除しました", "success");
+      // 少し待ってから戻る（toast見せる）
+      window.setTimeout(() => navigate("/"), 300);
+    } catch (e: any) {
+      showToast(e?.message ?? "削除に失敗しました", "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ステータス切り替え（APIがあるなら）
+  const handleToggleStatus = async (taskId: string) => {
+    if (!task) return;
+    if (updating) return;
+
+    // ここはあなたのAPI次第：
+    // - PATCH /api/tasks/:id { status }
+    // - PUTで status も更新
+    // など。いったん「未実装」でもB-3は進められる。
+    showToast("status切り替えはまだ未配線", "error");
+  };
 
   return (
-    <div style={{ padding: 16 }}>
-      <button onClick={() => navigate(-1)}>← Back</button>
-
-      <h2>Task Detail</h2>
-
-      {loading && <p>Loading...</p>}
-      {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
-
-      {task && (
-        <div
+    <div style={{ fontFamily: "system-ui", padding: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <button
+          onClick={() => navigate(-1)}
           style={{
-            marginTop: 12,
-            border: "1px solid #ddd",
-            borderRadius: 12,
-            padding: 12,
+            border: "1px solid rgba(0,0,0,0.12)",
+            background: "white",
+            borderRadius: 10,
+            padding: "6px 10px",
+            cursor: "pointer",
+            fontSize: 12,
           }}
         >
-          <div>
-            <b>ID:</b> {task.id}
-          </div>
-          <div>
-            <b>Title:</b> {task.title}
-          </div>
-          <div>
-            <b>Status:</b> {task.status}
-          </div>
-          <div>
-            <b>Reward:</b> {task.reward_yen} 円
-          </div>
-          <div>
-            <b>Created:</b> {new Date(task.created_at).toLocaleString()}
-          </div>
+          ← Back
+        </button>
+        <h1 style={{ margin: 0 }}>Task Detail</h1>
+      </div>
 
-          {/* ★追加：Close/Reopenボタン */}
-          <div style={{ marginTop: 12 }}>
-            <button
-              onClick={onToggleStatus}
-              disabled={!canToggle}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                cursor: canToggle ? "pointer" : "not-allowed",
-              }}
-            >
-              {mutating ? "Updating..." : toggleLabel}
-            </button>
-          </div>
+      {error && <p style={{ color: "red" }}>Error: {error}</p>}
+      {!error && !task && <p>loading...</p>}
+
+      {task && (
+        <div style={{ maxWidth: 720 }}>
+          <TaskCard
+            task={task}
+            onClick={() => {}}
+            onUpdate={handleUpdate}
+            onDelete={handleDelete}
+            onToggleStatus={handleToggleStatus}
+            disabled={updating || deleting}
+            isSaving={updating}
+            isDeleting={deleting}
+          />
+        </div>
+      )}
+
+      {toast && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(0,0,0,0.12)",
+            background: toast.type === "error" ? "#fff5f5" : "#f0fff4",
+            boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
+            maxWidth: 360,
+            zIndex: 9999,
+          }}
+        >
+          {toast.msg}
         </div>
       )}
     </div>
