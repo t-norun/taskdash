@@ -42,14 +42,16 @@ export default function TaskCard({
   task,
   onClick,
   onToggleStatus,
-  onDelete, // ★追加
+  onDelete,
   disabled,
+  isDeleting,
 }: {
   task: Task;
   onClick?: (task: Task) => void;
   onToggleStatus?: (taskId: string) => void;
-  onDelete?: (taskId: string) => void; // ★id渡し型に
+  onDelete?: (taskId: string) => void;
   disabled?: boolean;
+  isDeleting?: boolean;
 }) {
   return (
     <div
@@ -105,9 +107,10 @@ export default function TaskCard({
             border: "1px solid #f1c7c7",
             background: "#fff5f5",
             cursor: disabled ? "not-allowed" : "pointer",
+            opacity: isDeleting ? 0.7 : 1,
           }}
         >
-          Delete
+          {isDeleting ? "Deleting…" : "Delete"}
         </button>
       </div>
     </div>

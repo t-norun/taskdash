@@ -164,9 +164,10 @@ export default function TaskListPage() {
               <TaskCard
                 key={t.id}
                 task={t}
-                onClick={() => navigate(`/tasks/${t.id}`)}
+                onClick={(task) => navigate(`/tasks/${task.id}`)}
                 disabled={updatingIds.has(t.id) || deletingIds.has(t.id)}
-                onDelete={() => handleDelete(t.id)}
+                isDeleting={deletingIds.has(t.id)}
+                onDelete={(taskId) => handleDelete(taskId)}
                 onToggleStatus={async (taskId) => {
                   if (updatingIds.has(taskId)) return;
 
