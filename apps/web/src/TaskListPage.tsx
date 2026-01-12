@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiBase, apiGet } from "./lib/api";
+import { apiBase, apiGet, apiPost } from "./lib/api";
 // API_BASE_URL: .env等で未定義ならここで仮定義
 const API_BASE_URL =
   typeof apiBase === "string" ? apiBase : "https://taskdash-api.onrender.com";
@@ -254,6 +254,17 @@ export default function TaskListPage() {
           )}
 
           <button
+            onClick={async () => {
+              const title = window.prompt("タスク名を入力してください");
+              if (!title) return;
+              try {
+                await apiPost("/api/tasks", { title, reward_yen: 0 });
+                setToast?.({ type: "success", msg: "タスクを作成しました" });
+                await fetchTasks();
+              } catch (e: any) {
+                setToast?.({ type: "error", msg: e?.message ?? "作成に失敗しました" });
+              }
+            }}
             style={{
               marginTop: 24,
               padding: "10px 20px",
@@ -266,7 +277,6 @@ export default function TaskListPage() {
               boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
               transition: "background 0.2s",
             }}
-            onClick={() => window.alert("タスク作成機能は未実装です")}
           >
             ＋ タスク作成
           </button>
