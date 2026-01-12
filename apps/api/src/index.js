@@ -165,31 +165,24 @@ app.patch("/api/tasks/:id", async (c) => {
   }
 });
 
+
+// GET /api/tasks/:id（id::text比較で型ズレに強い）
 app.get("/api/tasks/:id", async (c) => {
-  const id = Number(c.req.param("id"));
-  if (!Number.isFinite(id)) {
-    return c.json({ ok: false, error: "invalid id" }, 400);
-  }
-
-  const sql = neon(process.env.DATABASE_URL);
-
   try {
+    const id = c.req.param("id");
+    const sql = neon(process.env.DATABASE_URL);
     const rows = await sql`
-      SELECT id, title, status, reward_yen, created_at
+      SELECT id::text AS id, title, status, reward_yen, created_at
       FROM tasks
-      WHERE id = ${id}
+      WHERE id::text = ${id}
       LIMIT 1
     `;
-
     const task = rows?.[0];
-    if (!task) {
-      return c.json({ ok: false, error: "not found" }, 404);
-    }
-
+    if (!task) return c.json({ ok: false, error: "not found" }, 404);
     return c.json({ ok: true, task });
-  } catch (err) {
-    console.error("GET /api/tasks/:id failed:", err);
-    return c.json({ ok: false, error: "internal error" }, 500);
+  } catch (e) {
+    console.error(e);
+    return c.json({ ok: false, error: "server error" }, 500);
   }
 });
 
