@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiBase, apiGet } from "./lib/api";
 // API_BASE_URL: .env等で未定義ならここで仮定義
-const API_BASE_URL = typeof apiBase === "string" ? apiBase : "https://taskdash-api.onrender.com";
+const API_BASE_URL =
+  typeof apiBase === "string" ? apiBase : "https://taskdash-api.onrender.com";
 import TaskCard, { type Task } from "./components/TaskCard";
 
 export default function TaskListPage() {
@@ -11,7 +12,25 @@ export default function TaskListPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all"); // "all" | "open" | "closed"
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
-    const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  // ===== Toast =====
+  const [toast, setToast] = useState<{
+    msg: string;
+    type?: "success" | "error";
+  } | null>(null);
+  const toastTimerRef = React.useRef<number | null>(null);
+
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    setToast({ msg, type });
+
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2500);
+  };
+  // =================
 
   // 正規化関数
   const normalizeStatus = (s: string) => String(s ?? "").toLowerCase();
@@ -45,47 +64,51 @@ export default function TaskListPage() {
         if (!cancelled) setTasks(d.tasks ?? []);
       } catch (e: any) {
         if (!cancelled) setError(String(e?.message ?? e));
+        if (!cancelled) showToast(String(e?.message ?? e), "error");
       }
     })();
 
     return () => {
       cancelled = true;
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
   }, []);
 
-    // タスク削除
-    const handleDelete = async (taskId: string) => {
-      const task = tasks.find((t) => t.id === taskId);
-      const ok = window.confirm(`このタスクを削除しますか？\n\n${task?.title ?? ""}`);
-      if (!ok) return;
+  // タスク削除
+  const handleDelete = async (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    const ok = window.confirm(`このタスクを削除しますか？\n\n${task?.title ?? ""}`);
+    if (!ok) return;
 
-      if (deletingIds.has(taskId)) return;
-      // 連打防止
-      setDeletingIds((s) => new Set(s).add(taskId));
+    if (deletingIds.has(taskId)) return;
 
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
-          method: "DELETE",
-        });
+    // 連打防止
+    setDeletingIds((s) => new Set(s).add(taskId));
 
-        const data = await res.json().catch(() => ({}));
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+        method: "DELETE",
+      });
 
-        if (!res.ok || !data?.ok) {
-          throw new Error(data?.error ?? `HTTP ${res.status}`);
-        }
+      const data = await res.json().catch(() => ({}));
 
-        // ✅ 成功: 一覧から除外
-        setTasks((prev) => prev.filter((x) => x.id !== taskId));
-      } catch (e: any) {
-        alert(e?.message ?? "削除に失敗しました");
-      } finally {
-        setDeletingIds((s) => {
-          const n = new Set(s);
-          n.delete(taskId);
-          return n;
-        });
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
       }
-    };
+
+      // ✅ 成功: 一覧から除外
+      setTasks((prev) => prev.filter((x) => x.id !== taskId));
+      showToast("削除しました", "success");
+    } catch (e: any) {
+      showToast(e?.message ?? "削除に失敗しました", "error");
+    } finally {
+      setDeletingIds((s) => {
+        const n = new Set(s);
+        n.delete(taskId);
+        return n;
+      });
+    }
+  };
 
   const navigate = useNavigate();
 
@@ -111,7 +134,8 @@ export default function TaskListPage() {
             padding: "6px 10px",
             borderRadius: 10,
             border: "1px solid rgba(255,255,255,0.15)",
-            background: statusFilter === "all" ? "rgba(255,255,255,0.12)" : "transparent",
+            background:
+              statusFilter === "all" ? "rgba(255,255,255,0.12)" : "transparent",
             color: "inherit",
             cursor: "pointer",
           }}
@@ -125,7 +149,8 @@ export default function TaskListPage() {
             padding: "6px 10px",
             borderRadius: 10,
             border: "1px solid rgba(255,255,255,0.15)",
-            background: statusFilter === "open" ? "rgba(255,255,255,0.12)" : "transparent",
+            background:
+              statusFilter === "open" ? "rgba(255,255,255,0.12)" : "transparent",
             color: "inherit",
             cursor: "pointer",
           }}
@@ -139,7 +164,10 @@ export default function TaskListPage() {
             padding: "6px 10px",
             borderRadius: 10,
             border: "1px solid rgba(255,255,255,0.15)",
-            background: statusFilter === "closed" ? "rgba(255,255,255,0.12)" : "transparent",
+            background:
+              statusFilter === "closed"
+                ? "rgba(255,255,255,0.12)"
+                : "transparent",
             color: "inherit",
             cursor: "pointer",
           }}
@@ -161,61 +189,106 @@ export default function TaskListPage() {
           }}
         >
           {filteredTasks.map((t) => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                onClick={(task) => navigate(`/tasks/${task.id}`)}
-                disabled={updatingIds.has(t.id) || deletingIds.has(t.id)}
-                isDeleting={deletingIds.has(t.id)}
-                onDelete={(taskId) => handleDelete(taskId)}
-                onToggleStatus={async (taskId) => {
-                  if (updatingIds.has(taskId)) return;
+            <TaskCard
+              key={t.id}
+              task={t}
+              onClick={(task) => navigate(`/tasks/${task.id}`)}
+              disabled={updatingIds.has(t.id) || deletingIds.has(t.id)}
+              isDeleting={deletingIds.has(t.id)}
+              onDelete={(taskId) => handleDelete(taskId)}
+              onToggleStatus={async (taskId) => {
+                if (updatingIds.has(taskId)) return;
 
-                  const current = tasks.find((x) => x.id === taskId);
-                  if (!current) return;
+                const current = tasks.find((x) => x.id === taskId);
+                if (!current) return;
 
-                  const prevStatus = current.status;
-                  const nextStatus = prevStatus === "open" ? "closed" : "open";
+                const prevStatus = current.status;
+                const nextStatus = prevStatus === "open" ? "closed" : "open";
 
-                  // PATCH中フラグON
-                  setUpdatingIds((s) => new Set(s).add(taskId));
+                // PATCH中フラグON
+                setUpdatingIds((s) => new Set(s).add(taskId));
 
-                  // ✅ Optimistic: 先に一覧を更新
-                  setTasks((prev) =>
-                    prev.map((x) => (x.id === taskId ? { ...x, status: nextStatus } : x))
-                  );
+                // ✅ Optimistic: 先に一覧を更新
+                setTasks((prev) =>
+                  prev.map((x) =>
+                    x.id === taskId ? { ...x, status: nextStatus } : x
+                  )
+                );
 
-                  try {
-                    const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ status: nextStatus }),
-                    });
+                try {
+                  const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: nextStatus }),
+                  });
 
-                    const data = await res.json();
+                  const data = await res.json();
 
-                    if (!res.ok || !data?.ok) {
-                      throw new Error(data?.error ?? `HTTP ${res.status}`);
-                    }
-
-                    // ✅ 成功: 何もしない（もう反映済み）
-                  } catch (e: any) {
-                    // ✅ 失敗: ロールバック
-                    setTasks((prev) =>
-                      prev.map((x) => (x.id === taskId ? { ...x, status: prevStatus } : x))
-                    );
-                    alert(e?.message ?? "更新に失敗しました（ロールバックしました）");
-                  } finally {
-                    // PATCH中フラグOFF
-                    setUpdatingIds((s) => {
-                      const n = new Set(s);
-                      n.delete(taskId);
-                      return n;
-                    });
+                  if (!res.ok || !data?.ok) {
+                    throw new Error(data?.error ?? `HTTP ${res.status}`);
                   }
-                }}
-              />
+
+                  showToast("更新しました", "success");
+                } catch (e: any) {
+                  // ✅ 失敗: ロールバック
+                  setTasks((prev) =>
+                    prev.map((x) =>
+                      x.id === taskId ? { ...x, status: prevStatus } : x
+                    )
+                  );
+                  showToast(
+                    e?.message ?? "更新に失敗しました（ロールバックしました）",
+                    "error"
+                  );
+                } finally {
+                  // PATCH中フラグOFF
+                  setUpdatingIds((s) => {
+                    const n = new Set(s);
+                    n.delete(taskId);
+                    return n;
+                  });
+                }
+              }}
+            />
           ))}
+        </div>
+      )}
+
+      {/* Toast UI */}
+      {toast && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(0,0,0,0.12)",
+            background: toast.type === "error" ? "#fff5f5" : "#f0fff4",
+            boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
+            maxWidth: 360,
+            zIndex: 9999,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontSize: 14, lineHeight: 1.3 }}>{toast.msg}</div>
+          <button
+            onClick={() => setToast(null)}
+            style={{
+              marginLeft: "auto",
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: "white",
+              borderRadius: 10,
+              padding: "6px 8px",
+              cursor: "pointer",
+              fontSize: 12,
+            }}
+          >
+            Close
+          </button>
         </div>
       )}
     </div>
