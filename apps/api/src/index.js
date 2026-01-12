@@ -6,10 +6,18 @@ import { neon } from "@neondatabase/serverless";
 
 const app = new Hono();
 
-// CORS設定（hono/corsのみ使用）
-app.use("*", cors({
-  origin: "https://taskdash-1.onrender.com",
-}));
+// CORS設定（本番 + ローカル）
+app.use(
+  "*",
+  cors({
+    origin: [
+      "https://taskdash-1.onrender.com",
+      "http://localhost:5173",
+    ],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 // POST /api/tasks 新規作成
 app.post("/api/tasks", async (c) => {
