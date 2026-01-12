@@ -74,6 +74,51 @@ app.get("/api/tasks", async (c) => {
 });
 
 // PATCH /api/tasks/:id ステータス更新
+// PUT /api/tasks/:id タイトル・報酬の編集
+app.put("/api/tasks/:id", async (c) => {
+  const id = c.req.param("id");
+
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "invalid json" }, 400);
+  }
+
+  const titleRaw = body?.title;
+  const rewardRaw = body?.reward_yen;
+
+  const title = typeof titleRaw === "string" ? titleRaw.trim() : "";
+  if (!title) return c.json({ ok: false, error: "title is required" }, 400);
+  if (title.length > 200) return c.json({ ok: false, error: "title is too long (max 200)" }, 400);
+
+  const reward_yen = Number(rewardRaw);
+  if (!Number.isFinite(reward_yen) || reward_yen < 0 || !Number.isInteger(reward_yen)) {
+    return c.json({ ok: false, error: "reward_yen must be a non-negative integer" }, 400);
+  }
+
+  const sql = neon(process.env.DATABASE_URL);
+
+  try {
+    const rows = await sql`
+      UPDATE tasks
+      SET title = ${title},
+          reward_yen = ${reward_yen}
+      WHERE id = ${id}
+      RETURNING id, title, status, reward_yen, created_at;
+    `;
+
+    const updated = Array.isArray(rows) ? rows[0] : rows?.[0];
+    if (!updated) return c.json({ ok: false, error: "task not found", id }, 404);
+
+    return c.json({ ok: true, task: updated });
+  } catch (err) {
+    console.error("PUT /api/tasks/:id failed:", err);
+    return c.json({ ok: false, error: "db error" }, 500);
+  }
+});
+
+// PATCH /api/tasks/:id ステータス更新
 app.patch("/api/tasks/:id", async (c) => {
   const id = c.req.param("id");
 
