@@ -29,26 +29,16 @@ export default function TaskDetailPage() {
   };
   // ====================================
 
-  // 1件取得
+  // 1件取得: GET /api/tasks/:id
   React.useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
         if (!id) throw new Error("id is missing");
-
-        // ✅ 推奨：GET /api/tasks/:id があるならそれを使う
-        // const d = await apiGet<any>(`/api/tasks/${id}`);
-        // if (!d?.ok) throw new Error(d?.error ?? "API error");
-        // if (!cancelled) setTask(d.task);
-
-        // ✅ もし /api/tasks/:id がまだ無いなら、一覧から探す暫定策（limit大きめ）
-        const d = await apiGet<any>("/api/tasks?limit=200&offset=0");
-        if (!d?.ok) throw new Error("API error: ok=false");
-
-        const found = (d.tasks ?? []).find((t: Task) => String(t.id) === String(id));
-        if (!found) throw new Error("タスクが見つかりません");
-        if (!cancelled) setTask(found);
+        const d = await apiGet<any>(`/api/tasks/${id}`);
+        if (!d?.ok) throw new Error(d?.error ?? "API error");
+        if (!cancelled) setTask(d.task);
       } catch (e: any) {
         if (!cancelled) setError(String(e?.message ?? e));
       }
