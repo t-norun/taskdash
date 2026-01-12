@@ -163,13 +163,6 @@ export default function TaskListPage() {
     <div style={{ fontFamily: "system-ui", padding: 24 }}>
       <h1>Task Dash</h1>
 
-      <p>
-        API Base: <code>{apiBase}</code>
-      </p>
-
-      <h2>/ping</h2>
-      <pre>{ping}</pre>
-
       <h2>Tasks</h2>
 
       {/* フィルタボタン */}
