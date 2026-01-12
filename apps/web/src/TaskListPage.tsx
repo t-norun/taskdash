@@ -14,6 +14,7 @@ export default function TaskListPage() {
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
+
   // ===== Toast =====
   const [toast, setToast] = useState<{
     msg: string;
@@ -110,6 +111,39 @@ export default function TaskListPage() {
     }
   };
 
+
+  // タスク更新（編集Save）
+  const handleUpdate = async (taskId: string, patch: { title: string; reward_yen: number }) => {
+    if (updatingIds.has(taskId)) return;
+
+    setUpdatingIds((s) => new Set(s).add(taskId));
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error ?? `HTTP ${res.status}`);
+      }
+
+      const updated = json.task ?? json;
+
+      setTasks((prev) => prev.map((x) => (x.id === taskId ? updated : x)));
+      showToast("保存しました", "success");
+    } catch (e: any) {
+      showToast(e?.message ?? "保存に失敗しました", "error");
+    } finally {
+      setUpdatingIds((s) => {
+        const n = new Set(s);
+        n.delete(taskId);
+        return n;
+      });
+    }
+  };
+
   const navigate = useNavigate();
 
   return (
@@ -193,67 +227,15 @@ export default function TaskListPage() {
               key={t.id}
               task={t}
               onClick={(task) => navigate(`/tasks/${task.id}`)}
+              onDelete={(taskId) => handleDelete(taskId)}
+              onUpdate={(taskId, patch) => handleUpdate(taskId, patch)}
               disabled={updatingIds.has(t.id) || deletingIds.has(t.id)}
               isDeleting={deletingIds.has(t.id)}
-              onDelete={(taskId) => handleDelete(taskId)}
-              onToggleStatus={async (taskId) => {
-                if (updatingIds.has(taskId)) return;
-
-                const current = tasks.find((x) => x.id === taskId);
-                if (!current) return;
-
-                const prevStatus = current.status;
-                const nextStatus = prevStatus === "open" ? "closed" : "open";
-
-                // PATCH中フラグON
-                setUpdatingIds((s) => new Set(s).add(taskId));
-
-                // ✅ Optimistic: 先に一覧を更新
-                setTasks((prev) =>
-                  prev.map((x) =>
-                    x.id === taskId ? { ...x, status: nextStatus } : x
-                  )
-                );
-
-                try {
-                  const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ status: nextStatus }),
-                  });
-
-                  const data = await res.json();
-
-                  if (!res.ok || !data?.ok) {
-                    throw new Error(data?.error ?? `HTTP ${res.status}`);
-                  }
-
-                  showToast("更新しました", "success");
-                } catch (e: any) {
-                  // ✅ 失敗: ロールバック
-                  setTasks((prev) =>
-                    prev.map((x) =>
-                      x.id === taskId ? { ...x, status: prevStatus } : x
-                    )
-                  );
-                  showToast(
-                    e?.message ?? "更新に失敗しました（ロールバックしました）",
-                    "error"
-                  );
-                } finally {
-                  // PATCH中フラグOFF
-                  setUpdatingIds((s) => {
-                    const n = new Set(s);
-                    n.delete(taskId);
-                    return n;
-                  });
-                }
-              }}
+              isSaving={updatingIds.has(t.id)}
             />
           ))}
         </div>
       )}
-
       {/* Toast UI */}
       {toast && (
         <div
