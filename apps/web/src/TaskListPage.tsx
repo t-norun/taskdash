@@ -49,23 +49,35 @@ export default function TaskListPage() {
     return true;
   });
 
+  // タスク一覧再取得
+  const fetchTasks = async () => {
+    try {
+      // /ping（必要なら残す）
+      const pong = await apiGet<any>("/ping");
+      setPing(JSON.stringify(pong));
+
+      // /api/tasks
+      const d = await apiGet<any>("/api/tasks?limit=5&offset=0");
+      if (!d?.ok) throw new Error("API error: ok=false");
+
+      setTasks(d.tasks ?? []);
+      setError(null);
+      showToast("再取得しました", "success");
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+      showToast(String(e?.message ?? e), "error");
+    }
+  };
+
   React.useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        // /ping
-        const pong = await apiGet<any>("/ping");
-        if (!cancelled) setPing(JSON.stringify(pong));
-
-        // /api/tasks
-        const d = await apiGet<any>("/api/tasks?limit=5&offset=0");
-        if (!d?.ok) throw new Error("API error: ok=false");
-
-        if (!cancelled) setTasks(d.tasks ?? []);
-      } catch (e: any) {
-        if (!cancelled) setError(String(e?.message ?? e));
-        if (!cancelled) showToast(String(e?.message ?? e), "error");
+        if (cancelled) return;
+        await fetchTasks();
+      } finally {
+        // no-op
       }
     })();
 
@@ -73,6 +85,7 @@ export default function TaskListPage() {
       cancelled = true;
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // タスク削除
@@ -160,7 +173,7 @@ export default function TaskListPage() {
       <h2>Tasks</h2>
 
       {/* フィルタボタン */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
         <button
           onClick={() => setStatusFilter("all")}
           aria-pressed={statusFilter === "all"}
@@ -207,6 +220,22 @@ export default function TaskListPage() {
           }}
         >
           Closed
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        <button
+          onClick={fetchTasks}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(0,0,0,0.12)",
+            background: "white",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          ↻ 再取得
         </button>
       </div>
 
