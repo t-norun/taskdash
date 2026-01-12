@@ -238,20 +238,38 @@ export default function TaskListPage() {
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
 
       {filteredTasks.length === 0 ? (
-        <div style={{ padding: 12, color: "#666" }}>
+        <div style={{ padding: 32, color: "#666", textAlign: "center" }}>
           {statusFilter === "all" ? (
             <>
-              <p style={{ margin: 0, fontWeight: 600 }}>まだタスクがありません。</p>
-              <p style={{ margin: "6px 0 0" }}>最初のタスクを作ってみましょう。</p>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: 18 }}>まだタスクがありません。</p>
+              <p style={{ margin: "10px 0 0", fontSize: 15 }}>最初のタスクを作ってみましょう。</p>
             </>
           ) : (
             <>
-              <p style={{ margin: 0, fontWeight: 600 }}>該当するタスクがありません。</p>
-              <p style={{ margin: "6px 0 0" }}>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: 18 }}>該当するタスクがありません。</p>
+              <p style={{ margin: "10px 0 0", fontSize: 15 }}>
                 フィルタを「All」に戻すか、新しいタスクを作ってみましょう。
               </p>
             </>
           )}
+
+          <button
+            style={{
+              marginTop: 24,
+              padding: "10px 20px",
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "#f7f7fa",
+              fontWeight: 600,
+              fontSize: 16,
+              cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              transition: "background 0.2s",
+            }}
+            onClick={() => window.alert("タスク作成機能は未実装です")}
+          >
+            ＋ タスク作成
+          </button>
         </div>
       ) : (
         <div
