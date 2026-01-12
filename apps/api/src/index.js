@@ -277,6 +277,27 @@ app.put("/api/tasks/:id/status", async (c) => {
     return c.json({ ok: false, error: "internal error" }, 500);
   }
 });
+// DELETE /api/tasks/:id 削除
+app.delete("/api/tasks/:id", async (c) => {
+  const id = c.req.param("id");
+  const sql = neon(process.env.DATABASE_URL);
+
+  try {
+    const rows = await sql`
+      DELETE FROM tasks
+      WHERE id = ${id}
+      RETURNING id, title, status, reward_yen, created_at;
+    `;
+
+    const deleted = Array.isArray(rows) ? rows[0] : rows?.[0];
+    if (!deleted) return c.json({ ok: false, error: "task not found", id }, 404);
+
+    return c.json({ ok: true, task: deleted });
+  } catch (err) {
+    console.error("DELETE /api/tasks/:id failed:", err);
+    return c.json({ ok: false, error: "db error" }, 500);
+  }
+});
 
 app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
 // ✅ それでも迷子にならないための最終手段
