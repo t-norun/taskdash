@@ -255,7 +255,8 @@ export default function TaskListPage() {
 
           <button
             onClick={async () => {
-              const title = window.prompt("タスク名を入力してください");
+              const titleRaw = window.prompt("タスク名を入力してください");
+              const title = (titleRaw ?? "").trim();
               if (!title) return;
               try {
                 await apiPost("/api/tasks", { title, reward_yen: 0 });
