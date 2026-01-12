@@ -104,11 +104,26 @@ export default function TaskDetailPage() {
     if (!task) return;
     if (updating) return;
 
-    // ここはあなたのAPI次第：
-    // - PATCH /api/tasks/:id { status }
-    // - PUTで status も更新
-    // など。いったん「未実装」でもB-3は進められる。
-    showToast("status切り替えはまだ未配線", "error");
+    const next = task.status === "closed" ? "open" : "closed";
+
+    setUpdating(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+
+      const updated = json.task ?? json;
+      setTask(updated);
+      showToast(next === "closed" ? "Closed にしました" : "Open にしました", "success");
+    } catch (e: any) {
+      showToast(e?.message ?? "更新に失敗しました", "error");
+    } finally {
+      setUpdating(false);
+    }
   };
 
   return (
