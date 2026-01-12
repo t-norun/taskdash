@@ -42,11 +42,13 @@ export default function TaskCard({
   task,
   onClick,
   onToggleStatus,
+  onDelete, // ★追加
   disabled,
 }: {
   task: Task;
   onClick?: (task: Task) => void;
   onToggleStatus?: (taskId: string) => void;
+  onDelete?: (taskId: string) => void; // ★id渡し型に
   disabled?: boolean;
 }) {
   return (
@@ -74,25 +76,40 @@ export default function TaskCard({
         <span style={reward}>{task.reward_yen.toLocaleString()} 円</span>
       </div>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleStatus?.(task.id);
-        }}
-        disabled={disabled}
-        style={{
-          marginTop: 12,
-          padding: "6px 10px",
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          background: "white",
-          cursor: disabled ? "not-allowed" : "pointer",
-          fontSize: 12,
-        }}
-      >
-        {task.status === "closed" ? "Reopen" : "Close"}
-      </button>
+      {/* ボタン行（Close と Delete を横並び） */}
+      <div style={actions}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleStatus?.(task.id);
+          }}
+          disabled={disabled}
+          style={{
+            ...btn,
+            cursor: disabled ? "not-allowed" : "pointer",
+          }}
+        >
+          {task.status === "closed" ? "Reopen" : "Close"}
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete?.(task.id);
+          }}
+          disabled={disabled}
+          style={{
+            ...btn,
+            border: "1px solid #f1c7c7",
+            background: "#fff5f5",
+            cursor: disabled ? "not-allowed" : "pointer",
+          }}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
@@ -135,6 +152,20 @@ const footer: React.CSSProperties = {
   justifyContent: "space-between",
   fontSize: 13,
   color: "#555",
+};
+
+const actions: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  marginTop: 12,
+};
+
+const btn: React.CSSProperties = {
+  padding: "6px 10px",
+  border: "1px solid #ddd",
+  borderRadius: 8,
+  background: "white",
+  fontSize: 12,
 };
 
 const id: React.CSSProperties = {};

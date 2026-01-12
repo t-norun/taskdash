@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiBase, apiGet } from "./lib/api";
 // API_BASE_URL: .env等で未定義ならここで仮定義
 const API_BASE_URL = typeof apiBase === "string" ? apiBase : "https://taskdash-api.onrender.com";
-import TaskCard, { Task } from "./components/TaskCard";
+import TaskCard, { type Task } from "./components/TaskCard";
 
 export default function TaskListPage() {
   const [ping, setPing] = React.useState<string>("loading...");
@@ -11,6 +11,7 @@ export default function TaskListPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all"); // "all" | "open" | "closed"
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
+    const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   // 正規化関数
   const normalizeStatus = (s: string) => String(s ?? "").toLowerCase();
@@ -51,6 +52,40 @@ export default function TaskListPage() {
       cancelled = true;
     };
   }, []);
+
+    // タスク削除
+    const handleDelete = async (taskId: string) => {
+      const task = tasks.find((t) => t.id === taskId);
+      const ok = window.confirm(`このタスクを削除しますか？\n\n${task?.title ?? ""}`);
+      if (!ok) return;
+
+      if (deletingIds.has(taskId)) return;
+      // 連打防止
+      setDeletingIds((s) => new Set(s).add(taskId));
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+          method: "DELETE",
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.error ?? `HTTP ${res.status}`);
+        }
+
+        // ✅ 成功: 一覧から除外
+        setTasks((prev) => prev.filter((x) => x.id !== taskId));
+      } catch (e: any) {
+        alert(e?.message ?? "削除に失敗しました");
+      } finally {
+        setDeletingIds((s) => {
+          const n = new Set(s);
+          n.delete(taskId);
+          return n;
+        });
+      }
+    };
 
   const navigate = useNavigate();
 
@@ -126,58 +161,59 @@ export default function TaskListPage() {
           }}
         >
           {filteredTasks.map((t) => (
-            <TaskCard
-              key={t.id}
-              task={t}
-              onClick={() => navigate(`/tasks/${t.id}`)}
-              disabled={updatingIds.has(t.id)}
-              onToggleStatus={async (taskId) => {
-                if (updatingIds.has(taskId)) return;
+              <TaskCard
+                key={t.id}
+                task={t}
+                onClick={() => navigate(`/tasks/${t.id}`)}
+                disabled={updatingIds.has(t.id) || deletingIds.has(t.id)}
+                onDelete={() => handleDelete(t.id)}
+                onToggleStatus={async (taskId) => {
+                  if (updatingIds.has(taskId)) return;
 
-                const current = tasks.find((x) => x.id === taskId);
-                if (!current) return;
+                  const current = tasks.find((x) => x.id === taskId);
+                  if (!current) return;
 
-                const prevStatus = current.status;
-                const nextStatus = prevStatus === "open" ? "closed" : "open";
+                  const prevStatus = current.status;
+                  const nextStatus = prevStatus === "open" ? "closed" : "open";
 
-                // PATCH中フラグON
-                setUpdatingIds((s) => new Set(s).add(taskId));
+                  // PATCH中フラグON
+                  setUpdatingIds((s) => new Set(s).add(taskId));
 
-                // ✅ Optimistic: 先に一覧を更新
-                setTasks((prev) =>
-                  prev.map((x) => (x.id === taskId ? { ...x, status: nextStatus } : x))
-                );
-
-                try {
-                  const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ status: nextStatus }),
-                  });
-
-                  const data = await res.json();
-
-                  if (!res.ok || !data?.ok) {
-                    throw new Error(data?.error ?? `HTTP ${res.status}`);
-                  }
-
-                  // ✅ 成功: 何もしない（もう反映済み）
-                } catch (e: any) {
-                  // ✅ 失敗: ロールバック
+                  // ✅ Optimistic: 先に一覧を更新
                   setTasks((prev) =>
-                    prev.map((x) => (x.id === taskId ? { ...x, status: prevStatus } : x))
+                    prev.map((x) => (x.id === taskId ? { ...x, status: nextStatus } : x))
                   );
-                  alert(e?.message ?? "更新に失敗しました（ロールバックしました）");
-                } finally {
-                  // PATCH中フラグOFF
-                  setUpdatingIds((s) => {
-                    const n = new Set(s);
-                    n.delete(taskId);
-                    return n;
-                  });
-                }
-              }}
-            />
+
+                  try {
+                    const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status: nextStatus }),
+                    });
+
+                    const data = await res.json();
+
+                    if (!res.ok || !data?.ok) {
+                      throw new Error(data?.error ?? `HTTP ${res.status}`);
+                    }
+
+                    // ✅ 成功: 何もしない（もう反映済み）
+                  } catch (e: any) {
+                    // ✅ 失敗: ロールバック
+                    setTasks((prev) =>
+                      prev.map((x) => (x.id === taskId ? { ...x, status: prevStatus } : x))
+                    );
+                    alert(e?.message ?? "更新に失敗しました（ロールバックしました）");
+                  } finally {
+                    // PATCH中フラグOFF
+                    setUpdatingIds((s) => {
+                      const n = new Set(s);
+                      n.delete(taskId);
+                      return n;
+                    });
+                  }
+                }}
+              />
           ))}
         </div>
       )}
