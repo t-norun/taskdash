@@ -164,6 +164,9 @@ export default function TaskListPage() {
       <h1>Task Dash</h1>
 
       <h2>Tasks</h2>
+      <p style={{ color: "#666", marginBottom: 16 }}>
+        タスクの作成・編集・完了管理ができます
+      </p>
 
       {/* フィルタボタン */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
@@ -235,7 +238,21 @@ export default function TaskListPage() {
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
 
       {filteredTasks.length === 0 ? (
-        <p>タスクがありません</p>
+        <div style={{ padding: 12, color: "#666" }}>
+          {statusFilter === "all" ? (
+            <>
+              <p style={{ margin: 0, fontWeight: 600 }}>まだタスクがありません。</p>
+              <p style={{ margin: "6px 0 0" }}>最初のタスクを作ってみましょう。</p>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: 0, fontWeight: 600 }}>該当するタスクがありません。</p>
+              <p style={{ margin: "6px 0 0" }}>
+                フィルタを「All」に戻すか、新しいタスクを作ってみましょう。
+              </p>
+            </>
+          )}
+        </div>
       ) : (
         <div
           style={{
