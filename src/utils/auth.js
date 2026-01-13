@@ -78,9 +78,17 @@ async function refreshAccessToken() {
  * @param {boolean} retry - 401エラー時にリトライするか（デフォルト: true）
  */
 export async function authenticatedFetch(url, options = {}, retry = true) {
+  const API_BASE = (import.meta?.env?.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+
+  // 相対URLなら API_BASE を付ける（/api/... → https://taskdash-api.../api/...）
+  const finalUrl =
+    url.startsWith("http")
+      ? url
+      : `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+
   const accessToken = localStorage.getItem("taskdash_access_token");
 
-  console.log(`🔐 authenticatedFetch: ${url}`);
+  console.log(`authenticatedFetch: ${finalUrl}`);
   console.log("Token exists:", !!accessToken);
   console.log("Token preview:", accessToken?.substring(0, 30) + "...");
 
@@ -90,7 +98,7 @@ export async function authenticatedFetch(url, options = {}, retry = true) {
     throw new Error("Not authenticated");
   }
 
-  const response = await fetch(url, {
+  const response = await fetch(finalUrl, {
     ...options,
     headers: {
       ...options.headers,
@@ -98,7 +106,7 @@ export async function authenticatedFetch(url, options = {}, retry = true) {
     },
   });
 
-  console.log(`Response status for ${url}:`, response.status);
+  console.log(`Response status for ${finalUrl}:", response.status);
 
   // 401 Unauthorized - Access Token expired
   if (response.status === 401 && retry) {
@@ -108,7 +116,7 @@ export async function authenticatedFetch(url, options = {}, retry = true) {
       const newAccessToken = await refreshAccessToken();
 
       // Retry with new token (retry=false to prevent infinite loop)
-      return await authenticatedFetch(url, options, false);
+      return await authenticatedFetch(finalUrl, options, false);
     } catch (error) {
       console.error("❌ Token refresh failed:", error);
       throw error;
