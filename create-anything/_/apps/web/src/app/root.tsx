@@ -37,7 +37,29 @@ import { useDevServerHeartbeat } from '../__create/useDevServerHeartbeat';
 
 export const links = () => [];
 
-if (globalThis.window && globalThis.window !== undefined) {
+// root.tsx（どこでもOK。windowがあるときだけ動く）
+if (typeof window !== "undefined") {
+  const API_BASE =
+    import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
+
+  const _fetch = window.fetch.bind(window);
+
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+    // ここが本丸：相対 /api を全部 taskdash-api に寄せる
+    if (url.startsWith("/api/")) {
+      return _fetch(`${API_BASE}${url}`, init);
+    }
+
+    return _fetch(input as any, init);
+  };
+}
   globalThis.window.fetch = fetch;
 }
 
