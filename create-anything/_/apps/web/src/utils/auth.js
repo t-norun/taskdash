@@ -1,3 +1,8 @@
+// 🚨 TEMP: disable ALL auth-related network calls
+export async function authenticatedFetch() {
+  throw new Error("authenticatedFetch disabled (auth temporarily off)");
+}
+
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
 
@@ -22,21 +27,21 @@ function withApiBase(url) {
 let refreshPromise = null;
 let refreshAttemptCounter = 0;
 
-async function refreshAccessToken() {
-  const attemptId = ++refreshAttemptCounter;
-  console.log(`🔄 [${attemptId}] Attempting to refresh access token...`);
-
-  // If already refreshing, wait for that promise
-  if (refreshPromise) {
-    console.log(`⏳ [${attemptId}] Refresh already in progress, waiting...`);
-    return await refreshPromise;
-  }
-
-  const refreshToken = localStorage.getItem("taskdash_refresh_token");
-  const refreshTokenId = localStorage.getItem("taskdash_refresh_token_id");
-
-  console.log(`🔑 [${attemptId}] Refresh token exists:`, !!refreshToken);
-  console.log(`🔑 [${attemptId}] Refresh token ID exists:`, !!refreshTokenId);
+// async function refreshAccessToken() {
+//   const attemptId = ++refreshAttemptCounter;
+//   console.log(`🔄 [${attemptId}] Attempting to refresh access token...`);
+//
+//   // If already refreshing, wait for that promise
+//   if (refreshPromise) {
+//     console.log(`⏳ [${attemptId}] Refresh already in progress, waiting...`);
+//     return await refreshPromise;
+//   }
+//
+//   const refreshToken = localStorage.getItem("taskdash_refresh_token");
+//   const refreshTokenId = localStorage.getItem("taskdash_refresh_token_id");
+//
+//   console.log(`🔑 [${attemptId}] Refresh token exists:`, !!refreshToken);
+//   console.log(`🔑 [${attemptId}] Refresh token ID exists:`, !!refreshTokenId);
 
   if (!refreshToken || !refreshTokenId) {
     console.log(`❌ [${attemptId}] No refresh token available`);

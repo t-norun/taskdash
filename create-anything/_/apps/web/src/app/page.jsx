@@ -35,8 +35,7 @@ export default function HomePage() {
   const [processingWithdraw, setProcessingWithdraw] = useState(false);
 
   useEffect(() => {
-    console.log("🔍 HomePage mounted, auth check SKIPPED");
-    // checkAuth(); ← 一旦殺す
+    console.log("🛑 Auth completely disabled");
 
     // Listen for PayPal success messages from child window
     const handleMessage = (event) => {
