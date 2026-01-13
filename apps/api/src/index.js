@@ -11,6 +11,7 @@ app.use(
   "*",
   cors({
     origin: [
+      "https://taskdash-web3.onrender.com", // 静的サイト
       "https://taskdash-web-9oda.onrender.com",
       "https://taskdash-1.onrender.com",
       "http://localhost:5173",
@@ -18,7 +19,7 @@ app.use(
     ],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
-    credentials: false,
+    credentials: true, // cookie使う可能性あるならON
   })
 );
 
