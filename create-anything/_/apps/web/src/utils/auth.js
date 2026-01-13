@@ -93,6 +93,14 @@ async function refreshAccessToken() {
  * @param {boolean} retry - 401エラー時にリトライするか（デフォルト: true）
  */
 export async function authenticatedFetch(url, options = {}, retry = true) {
+
+  const API_BASE =
+    import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
+
+  if (url.startsWith("/api/")) {
+    url = `${API_BASE}${url}`;
+  }
+
   const accessToken = localStorage.getItem("taskdash_access_token");
 
   console.log(`🔐 authenticatedFetch: ${url}`);
@@ -105,7 +113,7 @@ export async function authenticatedFetch(url, options = {}, retry = true) {
     throw new Error("Not authenticated");
   }
 
-  const response = await fetch(withApiBase(url), {
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...options.headers,
