@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { navigate, getQueryParam } from "@/utils/navigation";
 import { GripVertical } from "lucide-react";
 import { authenticatedFetch } from "@/utils/auth";
-import { API_BASE } from "@/lib/api";
+import { API_BASE } from "@/utils/apiBase";
 
 export default function TaskPage() {
   const [taskId, setTaskId] = useState(null);
