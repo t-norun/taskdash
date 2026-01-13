@@ -11,13 +11,19 @@ app.use(
   "*",
   cors({
     origin: [
+      "https://taskdash-web-9oda.onrender.com",
       "https://taskdash-1.onrender.com",
       "http://localhost:5173",
+      "http://localhost:3000",
     ],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
   })
 );
+
+// ping endpoint for health check
+app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
 
 // POST /api/tasks 新規作成
 app.post("/api/tasks", async (c) => {
