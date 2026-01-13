@@ -452,6 +452,15 @@ export default function HomePage() {
               : waitingCounts[selectedPrice] > 0
                 ? `Accept Job ($${selectedPrice.toFixed(2)}) - ${waitingCounts[selectedPrice]} waiting`
                 : `Accept Job ($${selectedPrice.toFixed(2)})`}
+
+          </button>
+
+          {/* DEV: PayPal未設定でもタスク画面に入るための仮ボタン */}
+          <button
+            onClick={() => (window.location.href = "/task?id=dev&price=1")}
+            className="w-full h-[56px] mt-3 border-2 border-[#E5E5E5] text-[16px] font-semibold rounded-lg hover:bg-[#F7F7F7]"
+          >
+            DEV: タスク開始（$1固定）
           </button>
 
           {selectedPrice && balance < selectedPrice && (
