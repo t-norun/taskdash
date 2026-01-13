@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../utils/apiBase";
 
 export function useWalletWithdrawal(wallet, onSuccess) {
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -19,7 +20,7 @@ export function useWalletWithdrawal(wallet, onSuccess) {
     const token = localStorage.getItem("taskdash_token");
 
     try {
-      const response = await fetch("/api/admin/wallet", {
+      const response = await fetch(`${API_BASE}/api/admin/wallet`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

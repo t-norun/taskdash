@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_BASE } from "../utils/apiBase";
 
 export function useAdminData(activeTab) {
   const [analytics, setAnalytics] = useState(null);
@@ -20,13 +21,13 @@ export function useAdminData(activeTab) {
 
     try {
       const [analyticsRes, walletRes, usersRes] = await Promise.all([
-        fetch("/api/admin/analytics", {
+        fetch(`${API_BASE}/api/admin/analytics`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch("/api/admin/wallet", {
+        fetch(`${API_BASE}/api/admin/wallet`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch("/api/admin/users", {
+        fetch(`${API_BASE}/api/admin/users`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -55,7 +56,7 @@ export function useAdminData(activeTab) {
   const fetchPayPalMode = async () => {
     const token = localStorage.getItem("taskdash_token");
     try {
-      const res = await fetch("/api/admin/paypal-mode", {
+      const res = await fetch(`${API_BASE}/api/admin/paypal-mode`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

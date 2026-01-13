@@ -15,7 +15,7 @@ import {
   getUser,
   isAuthenticated,
 } from "@/utils/auth";
-import { apiFetch } from "../../apps/web/src/utils/apiFetch";
+import { API_BASE } from "../utils/apiBase";
 
 export default function HomePage() {
   const [user, setUser] = useState(null);
@@ -43,7 +43,7 @@ export default function HomePage() {
     );
 
     // Test apiFetch
-    apiFetch("/api/health").then(console.log);
+    fetch(`${API_BASE}/api/health`).then(console.log);
 
     checkAuth();
 
@@ -102,7 +102,7 @@ export default function HomePage() {
       // Try to load balance
       try {
         console.log("📊 Loading balance...");
-        const balanceRes = await authenticatedFetch("/api/user/balance");
+        const balanceRes = await authenticatedFetch(`${API_BASE}/api/user/balance`);
         console.log("📊 Balance response:", balanceRes.status);
         const balanceData = await balanceRes.json();
         if (balanceRes.ok) {
@@ -119,7 +119,7 @@ export default function HomePage() {
       // Try to load history
       try {
         console.log("📜 Loading history...");
-        const historyRes = await authenticatedFetch("/api/user/history");
+        const historyRes = await authenticatedFetch(`${API_BASE}/api/user/history`);
         console.log("📜 History response:", historyRes.status);
         const historyData = await historyRes.json();
         if (historyRes.ok) {
@@ -139,7 +139,7 @@ export default function HomePage() {
     if (!isAuthenticated()) return;
 
     try {
-      const response = await authenticatedFetch("/api/tasks/waiting-count");
+      const response = await authenticatedFetch(`${API_BASE}/api/tasks/waiting-count`);
       const data = await response.json();
       if (response.ok) {
         setWaitingCounts(data.waitingCounts);
@@ -173,7 +173,7 @@ export default function HomePage() {
     setLoading(true);
 
     try {
-      const response = await authenticatedFetch("/api/tasks/accept", {
+      const response = await authenticatedFetch(`${API_BASE}/api/tasks/accept`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -207,7 +207,7 @@ export default function HomePage() {
       console.log("💳 Creating PayPal order for:", addFundsAmount);
 
       // Create PayPal order
-      const orderRes = await authenticatedFetch("/api/paypal/create-order", {
+      const orderRes = await authenticatedFetch(`${API_BASE}/api/paypal/create-order`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -282,7 +282,7 @@ export default function HomePage() {
     setProcessingWithdraw(true);
 
     try {
-      const response = await authenticatedFetch("/api/paypal/payout", {
+      const response = await authenticatedFetch(`${API_BASE}/api/paypal/payout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
