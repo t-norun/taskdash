@@ -18,14 +18,32 @@ if (typeof window !== "undefined") {
 import React from "react";
 import ReactDOM from "react-dom/client";
 
-const apiBase =
-  (import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:3000";
+const API_BASE =
+  (import.meta as any).env?.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
+
+// /api/* を必ずAPIへ向ける（漏れゼロ保険）
+if (typeof window !== "undefined") {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+    if (url.startsWith("/api/")) return _fetch(`${API_BASE}${url}`, init);
+    return _fetch(input as any, init);
+  };
+
+  console.log("[fetch patched] /api/* →", API_BASE);
+}
 
 function App() {
   const [ping, setPing] = React.useState<string>("loading...");
 
   React.useEffect(() => {
-    fetch(`${apiBase}/ping`)
+    fetch(`${API_BASE}/ping`)
       .then((r) => r.json())
       .then((d) => setPing(JSON.stringify(d)))
       .catch((e) => setPing(String(e)));
@@ -34,8 +52,12 @@ function App() {
   return (
     <div style={{ fontFamily: "system-ui", padding: 24 }}>
       <h1>Task Dash</h1>
-      <p>API Base: <code>{apiBase}</code></p>
-      <p>/ping: <code>{ping}</code></p>
+      <p>
+        API Base: <code>{API_BASE}</code>
+      </p>
+      <p>
+        /ping: <code>{ping}</code>
+      </p>
     </div>
   );
 }
