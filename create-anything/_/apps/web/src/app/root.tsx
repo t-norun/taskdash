@@ -52,7 +52,7 @@ if (typeof window !== "undefined") {
           ? input.toString()
           : input.url;
 
-    // ここが本丸：相対 /api を全部 taskdash-api に寄せる
+    // 🔥 ここが重要：/api で始まるものは全て API に飛ばす
     if (url.startsWith("/api/")) {
       return _fetch(`${API_BASE}${url}`, init);
     }
