@@ -78,6 +78,10 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   clearScreen: false,
+  build: {
+    sourcemap: true,
+    minify: false,
+  },
   server: {
     allowedHosts: true,
     host: '0.0.0.0',
