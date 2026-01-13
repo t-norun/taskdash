@@ -1,3 +1,37 @@
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
+
+function toApiUrl(url) {
+  if (!url) return url;
+  if (url.startsWith("http")) return url;
+  if (url.startsWith("/api/")) return `${API_BASE}${url}`;
+  return url;
+}
+
+export async function authenticatedFetch(url, options = {}, retry = true) {
+  const finalUrl = toApiUrl(url);
+  console.log("🔐 authenticatedFetch:", url, "->", finalUrl);
+
+  const accessToken = localStorage.getItem("access_token");
+  const headers = new Headers(options.headers || {});
+  headers.set("Content-Type", headers.get("Content-Type") || "application/json");
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  const res = await fetch(finalUrl, { ...options, headers });
+
+  // ここが重要：HTMLが返ってきたら内容を出して止める（<!DOCTYPE対策）
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("text/html")) {
+    const t = await res.text();
+    throw new Error(`API returned HTML for ${finalUrl}: ${t.slice(0,120)}`);
+  }
+
+  if (res.status === 401 && retry) {
+    // refresh 等あるならここ（無ければそのまま落としてOK）
+  }
+
+  return res;
+}
 // 🚨 TEMP: disable ALL auth-related network calls
 export async function authenticatedFetch() {
   throw new Error("authenticatedFetch disabled (auth temporarily off)");
