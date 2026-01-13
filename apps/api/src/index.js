@@ -80,3 +80,8 @@ serve(
   },
   () => console.log("API listening on", process.env.PORT ?? 3000)
 );
+
+// --- session check (temporary) ---
+app.get("/api/jwt/session", (c) => {
+  return c.json({ ok: true, authenticated: false, user: null });
+});
