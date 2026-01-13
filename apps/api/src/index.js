@@ -47,6 +47,15 @@ app.use(
 // ping endpoint for health check
 app.get("/ping", (c) => c.json({ ok: true, message: "pong" }));
 
+// health check endpoint
+app.get("/api/health", (c) => {
+  return c.json({
+    ok: true,
+    status: "alive",
+    time: new Date().toISOString(),
+  });
+});
+
 // POST /api/tasks 新規作成
 app.post("/api/tasks", async (c) => {
   let body;
