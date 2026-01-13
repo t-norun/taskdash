@@ -1,14 +1,4 @@
-﻿// GET /api/tasks/current
-app.get("/api/tasks/current", async (c) => {
-  // ひとまず固定値。あとでDB/マッチングに置き換え可能
-  const numbers = [45, 23, 89, 12, 67, 34, 91, 56, 78, 29];
-
-  return c.json({
-    ok: true,
-    taskSetId: "dev",
-    numbers,
-  });
-});
+﻿
 
 import "dotenv/config";
 import { Hono } from "hono";
@@ -20,6 +10,7 @@ const app = new Hono();
 
 console.log("BOOTED FILE:", import.meta.url);
 
+
 // JWTがまだでも、とりあえずフロントを進めるためのセッション確認API
 app.get("/api/jwt/session", (c) => {
   return c.json({
@@ -28,10 +19,17 @@ app.get("/api/jwt/session", (c) => {
     user: null,
   });
 });
-// JWT系API: 必ずJSONを返す
-app.get("/api/jwt/session", (c) => {
-  // いまはログイン未実装でもOK：必ずJSONを返す
-  return c.json({ ok: true, loggedIn: false, user: null });
+
+// GET /api/tasks/current
+app.get("/api/tasks/current", async (c) => {
+  // ひとまず固定値。あとでDB/マッチングに置き換え可能
+  const numbers = [45, 23, 89, 12, 67, 34, 91, 56, 78, 29];
+
+  return c.json({
+    ok: true,
+    taskSetId: "dev",
+    numbers,
+  });
 });
 
 app.post("/api/jwt/logout", (c) => {
@@ -364,7 +362,4 @@ serve(
   () => console.log("API listening on", process.env.PORT ?? 3000)
 );
 
-// --- session check (temporary) ---
-app.get("/api/jwt/session", (c) => {
-  return c.json({ ok: true, authenticated: false, user: null });
-});
+
