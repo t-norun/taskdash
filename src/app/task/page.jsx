@@ -1,9 +1,11 @@
 "use client";
 
+
 import { useState, useEffect, useRef } from "react";
 import { navigate, getQueryParam } from "@/utils/navigation";
 import { GripVertical } from "lucide-react";
 import { authenticatedFetch } from "@/utils/auth";
+import { API_BASE } from "@/lib/api";
 
 export default function TaskPage() {
   const [taskId, setTaskId] = useState(null);
@@ -103,13 +105,22 @@ export default function TaskPage() {
 
   const loadTask = async () => {
     try {
-      const response = await authenticatedFetch("/api/tasks/current");
 
-      const data = await response.json();
+      const response = await authenticatedFetch(
+        `${API_BASE}/api/tasks/current`
+      );
+
+      const text = await response.text();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to load task");
+        throw new Error(text || "Failed to load task");
       }
+
+      if (text.startsWith("<")) {
+        throw new Error("Expected JSON but got HTML");
+      }
+
+      const data = JSON.parse(text);
 
       setNumbers(data.numbers);
       setOrderedNumbers(new Array(10).fill(null));
