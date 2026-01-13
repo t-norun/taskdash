@@ -73,7 +73,9 @@ export default defineConfig({
     consoleToParent(),
     loadFontsFromTailwindSource(),
     addRenderIds(),
-    reactRouter(),
+    reactRouter({
+      ignoredRouteFiles: ["**/__create/**"],
+    }),
     tsconfigPaths({
   projects: [path.resolve(__dirname, "./tsconfig.json")],
   ignoreConfigErrors: true
