@@ -1,4 +1,13 @@
-﻿console.log("BOOTED FILE:", import.meta.url);
+﻿
+import "dotenv/config";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serve } from "@hono/node-server";
+import { neon } from "@neondatabase/serverless";
+
+const app = new Hono();
+
+console.log("BOOTED FILE:", import.meta.url);
 
 // JWTがまだでも、とりあえずフロントを進めるためのセッション確認API
 app.get("/api/jwt/session", (c) => {
@@ -21,13 +30,6 @@ app.post("/api/jwt/logout", (c) => {
 app.post("/api/jwt/refresh", (c) => {
   return c.json({ ok: false, reason: "no_refresh_token" }, 401);
 });
-import "dotenv/config";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { serve } from "@hono/node-server";
-import { neon } from "@neondatabase/serverless";
-
-const app = new Hono();
 
 // CORS設定（本番 + ローカル）
 app.use(
