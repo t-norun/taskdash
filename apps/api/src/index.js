@@ -1,4 +1,17 @@
-﻿import "dotenv/config";
+﻿// JWT系API: 必ずJSONを返す
+app.get("/api/jwt/session", (c) => {
+  // いまはログイン未実装でもOK：必ずJSONを返す
+  return c.json({ ok: true, loggedIn: false, user: null });
+});
+
+app.post("/api/jwt/logout", (c) => {
+  return c.json({ ok: true });
+});
+
+app.post("/api/jwt/refresh", (c) => {
+  return c.json({ ok: false, reason: "no_refresh_token" }, 401);
+});
+import "dotenv/config";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
