@@ -1,3 +1,18 @@
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
+
+function withApiBase(url) {
+  // すでに絶対URLならそのまま
+  if (url.startsWith("http")) return url;
+
+  // create-anything内部のアップロード等はそのまま（必要なら）
+  if (url.startsWith("/_create/")) return url;
+
+  // /api/... は必ず taskdash-api に向ける
+  if (url.startsWith("/api/")) return `${API_BASE}${url}`;
+
+  return url;
+}
 /**
  * JWT認証用のFetch wrapper
  * 自動的にBearer tokenをヘッダーに追加し、401エラー時にリフレッシュを試みる
@@ -90,7 +105,7 @@ export async function authenticatedFetch(url, options = {}, retry = true) {
     throw new Error("Not authenticated");
   }
 
-  const response = await fetch(url, {
+  const response = await fetch(withApiBase(url), {
     ...options,
     headers: {
       ...options.headers,
