@@ -106,7 +106,7 @@ export async function authenticatedFetch(url, options = {}, retry = true) {
     },
   });
 
-  console.log(`Response status for ${finalUrl}:`, response.status);
+  console.log(`Response status for ${url}:`, response.status);
 
   // 401 Unauthorized - Access Token expired
   if (response.status === 401 && retry) {
