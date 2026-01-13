@@ -45,7 +45,7 @@ export default function HomePage() {
     // Test apiFetch
     apiFetch("/api/health").then(console.log);
 
-    checkAuth();
+    // checkAuth();
 
     // Listen for PayPal success messages from child window
     const handleMessage = (event) => {
