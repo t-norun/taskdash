@@ -82,8 +82,8 @@ export default function HomePage() {
     console.log("🔍 isAuthenticated():", hasToken);
 
     if (!hasToken) {
-      console.log("❌ No token found, redirecting to /landing");
-      window.location.href = "/landing";
+      console.log("❌ No token found (stay on / as public page)");
+      setUser(null);
       return;
     }
 
