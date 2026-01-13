@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@/utils/auth";
 import { useState, useEffect } from "react";
 
 export function useAdminData(activeTab) {
@@ -20,13 +21,13 @@ export function useAdminData(activeTab) {
 
     try {
       const [analyticsRes, walletRes, usersRes] = await Promise.all([
-        fetch("/api/admin/analytics", {
+        authenticatedFetch("/api/admin/analytics", {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch("/api/admin/wallet", {
+        authenticatedFetch("/api/admin/wallet", {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch("/api/admin/users", {
+        authenticatedFetch("/api/admin/users", {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -55,7 +56,7 @@ export function useAdminData(activeTab) {
   const fetchPayPalMode = async () => {
     const token = localStorage.getItem("taskdash_token");
     try {
-      const res = await fetch("/api/admin/paypal-mode", {
+      const res = await authenticatedFetch("/api/admin/paypal-mode", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

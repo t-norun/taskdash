@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@/utils/auth";
 import { useState } from "react";
 
 export function useWalletWithdrawal(wallet, onSuccess) {
@@ -19,7 +20,7 @@ export function useWalletWithdrawal(wallet, onSuccess) {
     const token = localStorage.getItem("taskdash_token");
 
     try {
-      const response = await fetch("/api/admin/wallet", {
+      const response = await authenticatedFetch("/api/admin/wallet", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

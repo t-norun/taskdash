@@ -1,3 +1,5 @@
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
 "use client";
 
 import { useState } from "react";
@@ -15,7 +17,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/jwt/send-otp", {
+      const response = await fetch(`${API_BASE}/api/jwt/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -46,7 +48,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/jwt/verify-otp", {
+      const response = await fetch(`${API_BASE}/api/jwt/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code: otp }),
