@@ -14,10 +14,13 @@ export const useUser = () => {
     }
 
     try {
-      const response = await fetch("/api/jwt/session", {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${API_BASE}/api/jwt/session`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        cache: "no-store",
+        credentials: "include",
       });
 
       if (!response.ok) {

@@ -1,3 +1,4 @@
+console.log("VITE_API_BASE_URL =", import.meta.env.VITE_API_BASE_URL);
 if (typeof window !== "undefined") {
   const API_BASE =
     (import.meta as any).env?.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
