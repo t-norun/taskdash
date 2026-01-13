@@ -35,13 +35,8 @@ export default function HomePage() {
   const [processingWithdraw, setProcessingWithdraw] = useState(false);
 
   useEffect(() => {
-    console.log("🔍 HomePage mounted, checking auth...");
-    console.log(
-      "Access token exists:",
-      !!localStorage.getItem("taskdash_access_token"),
-    );
-
-    checkAuth();
+    console.log("🔍 HomePage mounted, auth check SKIPPED");
+    // checkAuth(); ← 一旦殺す
 
     // Listen for PayPal success messages from child window
     const handleMessage = (event) => {
