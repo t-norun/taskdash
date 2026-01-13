@@ -1,4 +1,6 @@
-﻿// JWTがまだでも、とりあえずフロントを進めるためのセッション確認API
+﻿console.log("BOOTED FILE:", import.meta.url);
+
+// JWTがまだでも、とりあえずフロントを進めるためのセッション確認API
 app.get("/api/jwt/session", (c) => {
   return c.json({
     ok: true,
