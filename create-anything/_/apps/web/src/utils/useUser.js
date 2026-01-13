@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@/utils/auth";
 import { useState, useEffect, useCallback } from "react";
 
 export const useUser = () => {
@@ -14,7 +15,7 @@ export const useUser = () => {
     }
 
     try {
-      const response = await fetch("/api/jwt/session", {
+      const response = await authenticatedFetch("/api/jwt/session", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
