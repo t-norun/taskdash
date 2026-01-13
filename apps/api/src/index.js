@@ -1,4 +1,15 @@
-﻿
+﻿// GET /api/tasks/current
+app.get("/api/tasks/current", async (c) => {
+  // ひとまず固定値。あとでDB/マッチングに置き換え可能
+  const numbers = [45, 23, 89, 12, 67, 34, 91, 56, 78, 29];
+
+  return c.json({
+    ok: true,
+    taskSetId: "dev",
+    numbers,
+  });
+});
+
 import "dotenv/config";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
