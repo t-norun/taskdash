@@ -1,4 +1,12 @@
-﻿// JWT系API: 必ずJSONを返す
+﻿// JWTがまだでも、とりあえずフロントを進めるためのセッション確認API
+app.get("/api/jwt/session", (c) => {
+  return c.json({
+    ok: true,
+    authenticated: false,
+    user: null,
+  });
+});
+// JWT系API: 必ずJSONを返す
 app.get("/api/jwt/session", (c) => {
   // いまはログイン未実装でもOK：必ずJSONを返す
   return c.json({ ok: true, loggedIn: false, user: null });
