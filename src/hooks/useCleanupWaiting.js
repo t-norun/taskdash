@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../utils/apiBase";
 
 export function useCleanupWaiting() {
   const [cleanupResult, setCleanupResult] = useState(null);
@@ -10,7 +11,7 @@ export function useCleanupWaiting() {
     setCleanupResult(null);
 
     try {
-      const response = await fetch("/api/tasks/cleanup-waiting", {
+      const response = await fetch(`${API_BASE}/api/tasks/cleanup-waiting`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

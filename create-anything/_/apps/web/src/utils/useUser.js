@@ -15,10 +15,17 @@ export const useUser = () => {
     }
 
     try {
+<<<<<<< HEAD
       const response = await authenticatedFetch("/api/jwt/session", {
+=======
+      const API_BASE = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${API_BASE}/api/jwt/session`, {
+>>>>>>> split-api
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        cache: "no-store",
+        credentials: "include",
       });
 
       if (!response.ok) {

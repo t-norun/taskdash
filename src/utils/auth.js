@@ -4,6 +4,8 @@
  */
 
 // Refresh token mutex - prevents parallel refresh attempts
+
+import { API_BASE } from "./apiBase";
 let refreshPromise = null;
 let refreshAttemptCounter = 0;
 
@@ -31,7 +33,7 @@ async function refreshAccessToken() {
   // Create the refresh promise
   refreshPromise = (async () => {
     try {
-      const response = await fetch("/api/jwt/refresh", {
+      const response = await fetch(`${API_BASE}/api/jwt/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken, refreshTokenId }),
