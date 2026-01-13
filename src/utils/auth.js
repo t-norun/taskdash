@@ -93,9 +93,9 @@ export async function authenticatedFetch(url, options = {}, retry = true) {
   console.log("Token preview:", accessToken?.substring(0, 30) + "...");
 
   if (!accessToken) {
-    console.log("❌ No access token, redirecting to /login");
-    window.location.href = "/login";
-    throw new Error("Not authenticated");
+    console.log("DEV: no access token, continuing without auth");
+    // 認証なしで叩く（401になるかもしれないが挙動確認できる）
+    return fetch(finalUrl, options);
   }
 
   const response = await fetch(finalUrl, {
