@@ -1,4 +1,4 @@
-import {
+﻿import {
   Links,
   Meta,
   Outlet,
@@ -247,8 +247,8 @@ export const ClientOnly: React.FC<ClientOnlyProps> = ({ loader }) => {
 /**
  * useHmrConnection()
  * ------------------
- * • `true`  → HMR socket is healthy
- * • `false` → socket lost (Vite is polling / may auto‑reload soon)
+ * 窶｢ `true`  竊・HMR socket is healthy
+ * 窶｢ `false` 竊・socket lost (Vite is polling / may auto窶喪eload soon)
  *
  * Works only in dev; in prod it always returns `true`.
  */
@@ -261,13 +261,13 @@ export function useHmrConnection(): boolean {
 
     /** Fired the moment the WS closes unexpectedly */
     const onDisconnect = () => setConnected(false);
-    /** Fired every time the WS (re‑)opens */
+    /** Fired every time the WS (re窶・opens */
     const onConnect = () => setConnected(true);
 
     import.meta.hot.on('vite:ws:disconnect', onDisconnect);
     import.meta.hot.on('vite:ws:connect', onConnect);
 
-    // Optional: catch the “about to full‑reload” event as a last resort
+    // Optional: catch the 窶彗bout to full窶喪eload窶・event as a last resort
     const onFullReload = () => setConnected(false);
     import.meta.hot.on('vite:beforeFullReload', onFullReload);
 
@@ -462,7 +462,9 @@ export function Layout({ children }: { children: ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
-        <script type="module" src="/src/__create/dev-error-overlay.js"></script>
+        {import.meta.env.DEV && (
+  <script type="module" src="/src/__create/dev-error-overlay.js"></script>
+)}
         <link rel="icon" href="/src/__create/favicon.png" />
         {LoadFontsSSR ? <LoadFontsSSR /> : null}
       </head>
