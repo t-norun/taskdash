@@ -105,12 +105,10 @@ function generateRoutes(node: Tree): RouteConfigEntry[] {
 	return routes;
 }
 if (import.meta.env.DEV) {
-	import.meta.glob('./**/page.jsx', {});
-	if (import.meta.hot) {
-		import.meta.hot.accept((newSelf) => {
-			import.meta.hot?.invalidate();
-		});
-	}
+	// import.meta.glob('./**/page.jsx', {});
+	import.meta.hot?.accept((newSelf: any) => {
+		import.meta.hot?.invalidate();
+	});
 }
 const tree = buildRouteTree(__dirname);
 const notFound = route('*?', './__create/not-found.tsx');

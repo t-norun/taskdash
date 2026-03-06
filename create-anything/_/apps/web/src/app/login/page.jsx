@@ -1,5 +1,7 @@
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
+
+
+import { sendOtp, verifyOtp } from "@/utils/auth";
+
 "use client";
 
 import { useState } from "react";
@@ -11,79 +13,57 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSendOTP = async (e) => {
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
+
+  async function handleSendOTP(e) {
     e.preventDefault();
     setError("");
     setLoading(true);
-
     try {
-      const response = await fetch(`${API_BASE}/api/jwt/send-otp`, {
+      const response = await fetch(`${API_BASE}/api/auth/otp/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to send code");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || `send failed (${response.status})`);
       }
-
-      // Development mode: log the code to console only
-      if (data.devCode) {
-        console.log(`🔐 Development OTP Code: ${data.devCode}`);
-      }
-
       setStep("otp");
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || String(err));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleVerifyOTP = async (e) => {
+  async function handleVerifyOTP(e) {
     e.preventDefault();
     setError("");
     setLoading(true);
-
     try {
-      const response = await fetch(`${API_BASE}/api/jwt/verify-otp`, {
+      const res = await fetch(`${API_BASE}/api/auth/otp/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code: otp }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to verify code");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `verify failed (${res.status})`);
       }
-
-      console.log("✅ OTP verified, storing tokens...");
-
-      // Store JWT tokens
-      localStorage.setItem("taskdash_access_token", data.accessToken);
-      localStorage.setItem("taskdash_refresh_token", data.refreshToken);
-      localStorage.setItem("taskdash_refresh_token_id", data.refreshTokenId);
-      localStorage.setItem("taskdash_user", JSON.stringify(data.user));
-
-      console.log("✅ Tokens stored successfully");
-      console.log(
-        "Access token:",
-        localStorage.getItem("taskdash_access_token")?.substring(0, 20) + "...",
-      );
-
-      // Wait a moment for localStorage to fully persist, then redirect
-      setTimeout(() => {
-        console.log("✅ Redirecting to home page...");
-        window.location.replace("/");
-      }, 100);
+      if (!data?.token) {
+        throw new Error("verify succeeded but token is missing");
+      }
+      localStorage.setItem("taskdash_access_token", data.token);
+      const params = new URLSearchParams(window.location.search);
+      const redirect = params.get("redirect");
+      window.location.href = redirect || "/";
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || String(err));
+    } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <div className="min-h-screen bg-white font-inter flex items-center justify-center p-4">

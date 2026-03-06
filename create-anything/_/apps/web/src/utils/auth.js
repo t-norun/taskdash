@@ -1,230 +1,240 @@
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
-
-function toApiUrl(url) {
-  if (!url) return url;
-  if (url.startsWith("http")) return url;
-  if (url.startsWith("/api/")) return `${API_BASE}${url}`;
-  return url;
-}
-
-export async function authenticatedFetch(url, options = {}, retry = true) {
-  const finalUrl = toApiUrl(url);
-  console.log("🔐 authenticatedFetch:", url, "->", finalUrl);
-
-  const accessToken = localStorage.getItem("access_token");
-  const headers = new Headers(options.headers || {});
-  headers.set("Content-Type", headers.get("Content-Type") || "application/json");
-  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-
-  const res = await fetch(finalUrl, { ...options, headers });
-
-  // ここが重要：HTMLが返ってきたら内容を出して止める（<!DOCTYPE対策）
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("text/html")) {
-    const t = await res.text();
-    throw new Error(`API returned HTML for ${finalUrl}: ${t.slice(0,120)}`);
-  }
-
-  if (res.status === 401 && retry) {
-    // refresh 等あるならここ（無ければそのまま落としてOK）
-  }
-
-  return res;
-}
-// 🚨 TEMP: disable ALL auth-related network calls
-export async function authenticatedFetch() {
-  throw new Error("authenticatedFetch disabled (auth temporarily off)");
-}
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
-
-function withApiBase(url) {
-  // すでに絶対URLならそのまま
-  if (url.startsWith("http")) return url;
-
-  // create-anything内部のアップロード等はそのまま（必要なら）
-  if (url.startsWith("/_create/")) return url;
-
-  // /api/... は必ず taskdash-api に向ける
-  if (url.startsWith("/api/")) return `${API_BASE}${url}`;
-
-  return url;
-}
-/**
- * JWT認証用のFetch wrapper
- * 自動的にBearer tokenをヘッダーに追加し、401エラー時にリフレッシュを試みる
+﻿/**
+ * apps/web/src/utils/auth.js
+ * create-anything (front)
+ *
+ * 目的:
+ * - API_BASE は VITE_API_BASE_URL（本番）を優先。無ければ localhost:3000
+ * - Demo mode のとき authenticatedFetch をブロックして「API直叩き事故」を止める
+ * - Cookieセッション認証 / Bearer認証のどちらでも通るようにする
+ * - 既存互換: authenticatedFetch / isAuthenticated / getUser / logout / requireAuth は残す
+ * - 本番OTP: /api/auth/otp/send , /api/auth/otp/verify を使用（token返却）
  */
 
-// Refresh token mutex - prevents parallel refresh attempts
-let refreshPromise = null;
-let refreshAttemptCounter = 0;
+const TOKEN_KEY = "taskdash_access_token";
 
-// async function refreshAccessToken() {
-//   const attemptId = ++refreshAttemptCounter;
-//   console.log(`🔄 [${attemptId}] Attempting to refresh access token...`);
-//
-//   // If already refreshing, wait for that promise
-//   if (refreshPromise) {
-//     console.log(`⏳ [${attemptId}] Refresh already in progress, waiting...`);
-//     return await refreshPromise;
-//   }
-//
-//   const refreshToken = localStorage.getItem("taskdash_refresh_token");
-//   const refreshTokenId = localStorage.getItem("taskdash_refresh_token_id");
-//
-//   console.log(`🔑 [${attemptId}] Refresh token exists:`, !!refreshToken);
-//   console.log(`🔑 [${attemptId}] Refresh token ID exists:`, !!refreshTokenId);
+// ✅ 本番は .env の VITE_API_BASE_URL に寄せる（例: https://api.taskdash.net）
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(
+  /\/+$/,
+  ""
+);
 
-  if (!refreshToken || !refreshTokenId) {
-    console.log(`❌ [${attemptId}] No refresh token available`);
-    throw new Error("No refresh token available");
+// runtimeData.ts と揃える
+const MODE_KEY = "taskdash_mode"; // "demo" | "real"
+const DEMO_VALUE = "demo";
+
+// debugログは明示ON時だけ
+const DEBUG_KEY = "taskdash_debug_auth"; // "1" で有効
+
+function safeGetLS(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
+}
+function safeSetLS(key, val) {
+  try {
+    localStorage.setItem(key, val);
+  } catch {}
+}
+function safeRemoveLS(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
 
-  // Create the refresh promise
-  refreshPromise = (async () => {
-    try {
-      const response = await fetch("/api/jwt/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken, refreshTokenId }),
-      });
+export function getApiBaseUrl() {
+  return API_BASE;
+}
 
-      console.log(
-        `📡 [${attemptId}] Refresh response status:`,
-        response.status,
-      );
+export function getAccessToken() {
+  return safeGetLS(TOKEN_KEY);
+}
 
-      if (!response.ok) {
-        console.log(
-          `❌ [${attemptId}] Refresh failed, clearing storage and redirecting to /login`,
-        );
-        // Refresh failed - redirect to login
-        localStorage.clear();
-        window.location.href = "/login";
-        throw new Error("Session expired. Please login again.");
-      }
+export function setAccessToken(token) {
+  if (!token) safeRemoveLS(TOKEN_KEY);
+  else safeSetLS(TOKEN_KEY, String(token));
+}
 
-      const data = await response.json();
+export function isAuthenticated() {
+  return !!getAccessToken();
+}
 
-      console.log(`✅ [${attemptId}] Token refreshed successfully`);
+export function getMode() {
+  const m = safeGetLS(MODE_KEY);
+  return m === DEMO_VALUE ? DEMO_VALUE : "real";
+}
 
-      // Update tokens
-      localStorage.setItem("taskdash_access_token", data.accessToken);
-      localStorage.setItem("taskdash_refresh_token", data.refreshToken);
-      localStorage.setItem("taskdash_refresh_token_id", data.refreshTokenId);
+export function isDemoMode() {
+  return getMode() === DEMO_VALUE;
+}
 
-      return data.accessToken;
-    } finally {
-      // Clear the promise after completion (success or failure)
-      refreshPromise = null;
+function isDebugOn() {
+  if (safeGetLS(DEBUG_KEY) === "1") return true;
+  try {
+    return !!window.__TASKDASH_DEBUG_AUTH__;
+  } catch {
+    return false;
+  }
+}
+
+function toApiUrl(path) {
+  if (!path) return API_BASE;
+  if (typeof path === "string" && /^https?:\/\//i.test(path)) return path;
+
+  const p = String(path);
+  return `${API_BASE}${p.startsWith("/") ? "" : "/"}${p}`;
+}
+
+/**
+ * authenticatedFetch
+ * - 通常: token があれば Authorization を付けて API_BASE へ fetch
+ * - Cookieセッションでも認証できるよう credentials: "include" を常に付ける
+ * - demo: 原則ブロック（UIが直で叩いてもここで止める）
+ *
+ * options.allowInDemo === true の時だけ demo でも通す（開発/検証用）
+ */
+export async function authenticatedFetch(path, options = {}) {
+  const url = toApiUrl(path);
+
+  // ✅ Demo遮断
+  if (isDemoMode()) {
+    const allowInDemo = !!options.allowInDemo;
+    const isToApiBase = typeof url === "string" && url.startsWith(API_BASE);
+    const looksApiPath =
+      typeof path === "string" ? path.startsWith("/api/") || path.startsWith("api/") : true;
+
+    if (!allowInDemo && isToApiBase && looksApiPath) {
+      const e = new Error("Demo mode: network calls are blocked (use runtimeData wrapper).");
+      e.code = "DEMO_MODE_BLOCKED";
+      e.url = url;
+      throw e;
     }
-  })();
+  }
 
-  return await refreshPromise;
+  const token = getAccessToken();
+  const headers = new Headers(options.headers || {});
+
+  // tokenがある時だけ Authorization を付ける
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  if (!headers.has("Content-Type") && options.body != null) {
+    // 呼び出し側が未指定ならJSONとして扱う（FormData等は呼び出し側で上書きして）
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (isDebugOn()) {
+    // eslint-disable-next-line no-console
+    console.log("[AUTH] url=", url, "hasToken=", !!token, "mode=", getMode());
+  }
+
+  // options を壊さず、headers/allowInDemo だけ除去
+  const { headers: _ignored, allowInDemo: _ignored2, ...rest } = options;
+
+  return fetch(url, {
+    ...rest,
+    headers,
+    credentials: "include",
+  });
 }
 
 /**
- * 認証付きFetch
- * @param {string} url - リクエストURL
- * @param {RequestInit} options - Fetchオプション
- * @param {boolean} retry - 401エラー時にリトライするか（デフォルト: true）
+ * OTP (本番仕様)
+ * ✅ 送信: POST /api/auth/otp/send { email }
+ * ✅ 検証: POST /api/auth/otp/verify { email, code } -> { ok:true, token }
  */
-export async function authenticatedFetch(url, options = {}, retry = true) {
+export async function sendOtp(email) {
+  if (!email) throw new Error("email is required");
 
-  const API_BASE =
-    import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
-
-  if (url.startsWith("/api/")) {
-    url = `${API_BASE}${url}`;
-  }
-
-  const accessToken = localStorage.getItem("taskdash_access_token");
-
-  console.log(`🔐 authenticatedFetch: ${url}`);
-  console.log("Token exists:", !!accessToken);
-  console.log("Token preview:", accessToken?.substring(0, 30) + "...");
-
-  if (!accessToken) {
-    console.log("❌ No access token, redirecting to /login");
-    window.location.href = "/login";
-    throw new Error("Not authenticated");
-  }
-
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      Authorization: `Bearer ${accessToken}`,
-    },
+  const r = await authenticatedFetch("/api/auth/otp/send", {
+    method: "POST",
+    allowInDemo: false,
+    body: JSON.stringify({ email }),
   });
 
-  console.log(`Response status for ${url}:`, response.status);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data?.ok) {
+    throw new Error(data?.error || `send failed (${r.status})`);
+  }
+  return true;
+}
 
-  // 401 Unauthorized - Access Token expired
-  if (response.status === 401 && retry) {
-    console.log("🔄 Got 401, attempting token refresh...");
-    try {
-      // Refresh token and retry
-      const newAccessToken = await refreshAccessToken();
+export async function verifyOtp(email, code) {
+  if (!email) throw new Error("email is required");
+  if (!code) throw new Error("code is required");
 
-      // Retry with new token (retry=false to prevent infinite loop)
-      return await authenticatedFetch(url, options, false);
-    } catch (error) {
-      console.error("❌ Token refresh failed:", error);
-      throw error;
-    }
+  const r = await authenticatedFetch("/api/auth/otp/verify", {
+    method: "POST",
+    allowInDemo: false,
+    body: JSON.stringify({ email, code }),
+  });
+
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data?.ok) {
+    throw new Error(data?.error || `verify failed (${r.status})`);
   }
 
-  // If retry=false and still 401, or any other error status
-  if (response.status === 401 && !retry) {
-    console.log("❌ Still 401 after refresh, session expired");
-    localStorage.clear();
-    window.location.href = "/login";
-    throw new Error("Session expired");
+  if (!data?.token) {
+    throw new Error("verify succeeded but token is missing (API response has no token)");
   }
 
-  return response;
+  setAccessToken(data.token);
+  return data.token;
 }
 
 /**
- * ログアウト
+ * 互換: getUser
+ * - 旧仕様: balance が取れたら「ログインしてる」とみなす
+ * - demo: 常に null（UIが “未ログイン” 扱いになるように）
+ */
+export async function getUser() {
+  if (isDemoMode()) return null;
+
+  try {
+    const r = await authenticatedFetch("/api/user/balance", { method: "GET" });
+    if (!r.ok) return null;
+
+    const data = await r.json().catch(() => null);
+    if (!data) return null;
+
+    return {
+      id: data.userId ?? data.id ?? null,
+      userId: data.userId ?? null,
+      level: data.level ?? 1,
+      tickets: data.tickets ?? null,
+      effectiveTickets: data.effectiveTickets ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 互換: requireAuth
+ * - ログインしてなければ throw
+ */
+export function requireAuth() {
+  if (!isAuthenticated()) {
+    throw new Error("Not authenticated");
+  }
+}
+
+/**
+ * logout
+ * - 本番側のlogoutが無くても、tokenを消せばフロント的にはログアウト扱いになる
+ * - 旧互換の /api/jwt/logout は「存在すれば叩く」でOK
  */
 export async function logout() {
+  setAccessToken(null);
+
+  if (isDemoMode()) return;
+
   try {
-    const refreshTokenId = localStorage.getItem("taskdash_refresh_token_id");
-
-    // サーバー側でRefresh Tokenを失効
-    await authenticatedFetch(
-      "/api/jwt/logout",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshTokenId }),
-      },
-      false,
-    ); // Don't retry on 401
-  } catch (error) {
-    console.error("Logout error:", error);
-  } finally {
-    // Clear local storage and redirect
-    localStorage.clear();
-    window.location.href = "/login";
+    // 旧ルート互換：存在すればセッションも切れる
+    await authenticatedFetch("/api/jwt/logout", { method: "POST" });
+  } catch {
+    // ignore
   }
-}
-
-/**
- * ユーザー情報を取得
- */
-export function getUser() {
-  const userStr = localStorage.getItem("taskdash_user");
-  return userStr ? JSON.parse(userStr) : null;
-}
-
-/**
- * 認証状態を確認
- */
-export function isAuthenticated() {
-  return !!localStorage.getItem("taskdash_access_token");
 }

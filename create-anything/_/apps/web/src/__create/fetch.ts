@@ -1,4 +1,4 @@
-const originalFetch = fetch;
+﻿const originalFetch = fetch;
 const isBackend = () => typeof window === 'undefined';
 
 const safeStringify = (value: unknown) =>
@@ -54,6 +54,17 @@ const isSecondPartyUrl = (url: string) => {
   );
 };
 
+const API_BASE =
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
+  'http://localhost:3000';
+
+const withApiBase = (url: string) => {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/api/')) return API_BASE + url;
+  return url;
+};
+
 export const fetchWithHeaders = async (
   input: RequestInfo | URL,
   init?: RequestInit
@@ -67,7 +78,12 @@ export const fetchWithHeaders = async (
   const isExternalFetch = !isFirstPartyURL(url) && !isSecondPartyUrl(url);
   // we should not add headers to requests that don't go to our own server
   // or if it's an API request
-  if (isExternalFetch || url.startsWith('/api')) {
+  if (url.startsWith('/api/')) {
+    const nextUrl = withApiBase(url);
+    return originalFetch(nextUrl, init);
+  }
+
+  if (isExternalFetch) {
     return originalFetch(input, init);
   }
 
@@ -134,3 +150,4 @@ export const fetchWithHeaders = async (
 };
 
 export default fetchWithHeaders;
+
