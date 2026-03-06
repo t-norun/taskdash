@@ -5,3 +5,4 @@ export async function GET() {
     ENV: process.env.ENV,
   });
 }
+

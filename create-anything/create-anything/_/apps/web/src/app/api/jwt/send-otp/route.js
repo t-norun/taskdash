@@ -83,17 +83,17 @@ export async function POST(request) {
         text: `Your Task Dash verification code is: ${code}\n\nThis code will expire in 10 minutes.`,
       });
 
-      console.log(`✅ OTP sent successfully to ${email}`);
+      console.log(`✁EOTP sent successfully to ${email}`);
 
       return Response.json({
         success: true,
         message: "Verification code sent to your email",
       });
     } catch (emailError) {
-      console.error("❌ Email send error:", emailError);
+      console.error("❁EEmail send error:", emailError);
       console.log(`🔐 DEVELOPMENT OTP for ${email}: ${code}`);
       console.log(
-        `⚠️  Email service not configured. Please set RESEND_API_KEY or check Resend domain authentication.`,
+        `⚠�E�E Email service not configured. Please set RESEND_API_KEY or check Resend domain authentication.`,
       );
 
       // Return the OTP in development/test mode
@@ -112,3 +112,4 @@ export async function POST(request) {
     );
   }
 }
+

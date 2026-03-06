@@ -1,6 +1,6 @@
 import sql from "../../utils/sql";
 
-// 管理者権限チェック
+// 管琁E��E��限チェチE��
 function isAdmin(email) {
   return email === "taskdash.llc@gmail.com";
 }
@@ -29,12 +29,12 @@ export async function GET(request) {
       return Response.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    // ユーザー統計
+    // ユーザー統訁E
     const totalUsers = await sql`
       SELECT COUNT(*) as count FROM users
     `;
 
-    // 正答率分布
+    // 正答率刁E��E
     const accuracyDistribution = await sql`
       SELECT 
         CASE 
@@ -51,7 +51,7 @@ export async function GET(request) {
       ORDER BY range
     `;
 
-    // レベル分布
+    // レベル刁E��E
     const levelDistribution = await sql`
       SELECT level, COUNT(*) as count
       FROM users
@@ -72,7 +72,7 @@ export async function GET(request) {
       LIMIT 50
     `;
 
-    // タイム分布
+    // タイム刁E��E
     const timeStats = await sql`
       SELECT 
         AVG(avg_time_ms) as mean,
@@ -83,7 +83,7 @@ export async function GET(request) {
       WHERE completed_tasks > 0
     `;
 
-    // リピート率（2回以上受注したユーザー）
+    // リピ�Eト率�E�E回以上受注したユーザー�E�E
     const repeatUsers = await sql`
       SELECT COUNT(*) as count
       FROM users
@@ -95,7 +95,7 @@ export async function GET(request) {
         ? (repeatUsers[0].count / totalUsers[0].count) * 100
         : 0;
 
-    // 受注率（タスク受注/総ユーザー）
+    // 受注玁E��タスク受注/総ユーザー�E�E
     const taskAcceptance = await sql`
       SELECT COUNT(*) as count
       FROM users
@@ -107,7 +107,7 @@ export async function GET(request) {
         ? (taskAcceptance[0].count / totalUsers[0].count) * 100
         : 0;
 
-    // 最近アクティブなユーザー（上位20名）
+    // 最近アクチE��ブなユーザー�E�上佁E0名！E
     const activeUsers = await sql`
       SELECT 
         id, email, display_name,
@@ -171,3 +171,4 @@ export async function GET(request) {
     );
   }
 }
+

@@ -17,6 +17,7 @@ export function PayPalConfiguration({ paypalMode }) {
                   : "🟡 SANDBOX (Test)"}
               </p>
             </div>
+
             <div
               className={`px-4 py-2 rounded-lg font-bold text-[14px] ${
                 paypalMode.mode === "live"
@@ -24,7 +25,7 @@ export function PayPalConfiguration({ paypalMode }) {
                   : "bg-yellow-500/20 text-yellow-600"
               }`}
             >
-              {paypalMode.mode.toUpperCase()}
+              {String(paypalMode.mode || "").toUpperCase()}
             </div>
           </div>
 
@@ -38,7 +39,7 @@ export function PayPalConfiguration({ paypalMode }) {
                 {paypalMode.sandboxConfigured ? (
                   <span className="text-[#10B981] text-[18px]">✓</span>
                 ) : (
-                  <span className="text-[#EF4444] text-[18px]">✗</span>
+                  <span className="text-[#EF4444] text-[18px]">✕</span>
                 )}
               </div>
               <p className="text-[12px] text-[#7A7A7A]">
@@ -54,7 +55,7 @@ export function PayPalConfiguration({ paypalMode }) {
                 {paypalMode.liveConfigured ? (
                   <span className="text-[#10B981] text-[18px]">✓</span>
                 ) : (
-                  <span className="text-[#EF4444] text-[18px]">✗</span>
+                  <span className="text-[#EF4444] text-[18px]">✕</span>
                 )}
               </div>
               <p className="text-[12px] text-[#7A7A7A]">
@@ -126,10 +127,9 @@ export function PayPalConfiguration({ paypalMode }) {
                   Fixed Webhook URL:
                 </p>
                 <code className="block bg-white p-3 rounded border border-purple-200 text-[#10B981] break-all font-mono text-[12px]">
-                  {typeof window !== "undefined"
+                  {(typeof window !== "undefined"
                     ? window.location.origin
-                    : "https://your-app.created.app"}
-                  /api/paypal/webhook
+                    : "https://your-app.created.app") + "/api/paypal/webhook"}
                 </code>
               </div>
 

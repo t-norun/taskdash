@@ -1,40 +1,99 @@
-import sql from "../../utils/sql";
 import { authenticateUser } from "../../utils/auth";
+
+const V2_BASE =
+  process.env.V2_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
+  "https://api.taskdash.net";
+
+function forwardHeaders(request) {
+  const h = new Headers();
+  const auth = request.headers.get("authorization");
+  if (auth) h.set("authorization", auth);
+
+  const cookie = request.headers.get("cookie");
+  if (cookie) h.set("cookie", cookie);
+
+  const devKey = request.headers.get("x-dev-key");
+  if (devKey) h.set("x-dev-key", devKey);
+
+  return h;
+}
+
+// v2の返却めE{ waitingCounts: { [priceUsd]: count } } に寁E��めE
+function normalizeWaitingCounts(data) {
+  // 期征E��E: { waitingCounts: { "1": 2, "5": 0 } }
+  if (data?.waitingCounts && typeof data.waitingCounts === "object") {
+    return data.waitingCounts;
+  }
+
+  // 期征E��E: { countsByPrice: {...} }
+  if (data?.countsByPrice && typeof data.countsByPrice === "object") {
+    return data.countsByPrice;
+  }
+
+  // 期征E��E: { items: [{ priceUsd: 1, waitingCount: 2 }, ...] }
+  const items = data?.items || data?.data || data;
+  if (Array.isArray(items)) {
+    const out = {};
+    for (const it of items) {
+      const price =
+        Number(it.priceUsd ?? it.price ?? it.usd ?? it.price_usd);
+      const cnt = Number(it.waitingCount ?? it.count ?? it.waiting_count);
+      if (Number.isFinite(price) && Number.isFinite(cnt)) out[price] = cnt;
+    }
+    return out;
+  }
+
+  return null;
+}
 
 export async function GET(request) {
   try {
-    // JWT Bearer認証に統一
     await authenticateUser(request);
 
-    // Get waiting count by price
-    const waitingCounts = await sql`
-      SELECT 
-        ts.price_usd,
-        COUNT(s.id) as waiting_count
-      FROM task_sets ts
-      LEFT JOIN submissions s ON s.task_set_id = ts.id
-        AND s.is_correct = true
-        AND s.matched = false
-        AND s.created_at > NOW() - INTERVAL '10 minutes'
-      WHERE ts.active_to > NOW()
-      GROUP BY ts.price_usd
-      ORDER BY ts.price_usd ASC
-    `;
+    // v2に「waiting-count」系がある想定で頁E��試す（無ければ {} に倒す�E�E
+    const candidates = [
+      `${V2_BASE}/tasks/waiting-count`,
+      `${V2_BASE}/queue/waiting-count`,
+      `${V2_BASE}/analytics/waiting-count`,
+      `${V2_BASE}/admin/analytics/waiting-count`,
+    ];
 
-    // Convert to object for easy lookup
-    const countsByPrice = {};
-    waitingCounts.forEach((row) => {
-      countsByPrice[parseFloat(row.price_usd)] = parseInt(row.waiting_count);
-    });
+    let data = null;
 
+    for (const url of candidates) {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: forwardHeaders(request),
+        cache: "no-store",
+      });
+
+      if (res.status === 404) continue;
+
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j?.ok === false) {
+        // 404以外�E失敗�E、その場で打ち刁E��てフォールバック
+        break;
+      }
+
+      const normalized = normalizeWaitingCounts(j);
+      if (normalized) {
+        data = normalized;
+        break;
+      }
+    }
+
+    // v2に無ぁE形が読めなぁE��ら、最短は空で返す�E�EIを壊さなぁE��E
     return Response.json({
-      waitingCounts: countsByPrice,
+      waitingCounts: data ?? {},
     });
   } catch (error) {
     console.error("Waiting count error:", error);
     return Response.json(
-      { error: error.message || "Failed to get waiting count" },
-      { status: error.message?.includes("Unauthorized") ? 401 : 500 },
+      { error: error?.message || "Failed to get waiting count" },
+      { status: error?.message?.includes("Unauthorized") ? 401 : 500 },
     );
   }
 }
+
+

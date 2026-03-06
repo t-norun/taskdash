@@ -1,7 +1,7 @@
 // JWT認証用のuseAuthフック
 export default function useAuth() {
   const signInWithCredentials = async ({ email, redirect = true }) => {
-    // JWTログインは /login ページで直接処理される
+    // JWTログインは /login ペ�Eジで直接処琁E��れる
     if (redirect) {
       window.location.href = `/login?email=${encodeURIComponent(email)}`;
     }
@@ -23,3 +23,4 @@ export default function useAuth() {
     signOut,
   };
 }
+

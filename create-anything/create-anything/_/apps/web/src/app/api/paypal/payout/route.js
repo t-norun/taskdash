@@ -3,9 +3,9 @@ import { paypalRequest } from "#/app/api/paypal/utils/auth";
 import { authenticateUser } from "../../utils/auth";
 
 /**
- * ユーザーへのPayPal送金（報酬支払い）
- * 保留システム：Payout作成時はPENDINGでreserved_balanceに引き当て
- * Webhook受信時にCOMPLETED/FAILEDに更新して確定・解除
+ * ユーザーへのPayPal送E�߁E�報酬支払い�E�E
+ * 保留シスチE���E�Payout作�E時�EPENDINGでreserved_balanceに引き当て
+ * Webhook受信時にCOMPLETED/FAILEDに更新して確定�E解除
  */
 export async function POST(request) {
   try {
@@ -21,7 +21,7 @@ export async function POST(request) {
       return Response.json({ error: "PayPal email required" }, { status: 400 });
     }
 
-    // 利用可能残高を確認（balance - reserved_balance）
+    // 利用可能残高を確認！Ealance - reserved_balance�E�E
     const availableBalance =
       parseFloat(user.balance) - parseFloat(user.reserved_balance || 0);
     if (availableBalance < amount) {
@@ -35,7 +35,7 @@ export async function POST(request) {
       );
     }
 
-    // PayPal Payoutsで送金
+    // PayPal Payoutsで送E��
     const payoutData = await paypalRequest("/v1/payments/payouts", {
       method: "POST",
       body: JSON.stringify({
@@ -61,14 +61,14 @@ export async function POST(request) {
 
     const payoutBatchId = payoutData.batch_header.payout_batch_id;
 
-    // 保留残高を増やす（実際の残高はまだ減らさない）
+    // 保留残高を増やす（実際の残高�Eまだ減らさなぁE��E
     await sql`
       UPDATE users
       SET reserved_balance = reserved_balance + ${amount}
       WHERE id = ${user.id}
     `;
 
-    // Ledgerに保留記録（Webhook確定待ち）
+    // Ledgerに保留記録�E�Eebhook確定征E���E�E
     await sql`
       INSERT INTO ledger (
         user_id, type, amount, 
@@ -82,7 +82,7 @@ export async function POST(request) {
       )
     `;
 
-    // PayPal取引を保存（PENDING状態、payout_item_idはWebhookで更新）
+    // PayPal取引を保存！EENDING状態、payout_item_idはWebhookで更新�E�E
     await sql`
       INSERT INTO paypal_transactions (
         user_id, payout_batch_id, amount, currency, 
@@ -114,3 +114,4 @@ export async function POST(request) {
     );
   }
 }
+

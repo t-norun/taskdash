@@ -42,3 +42,4 @@ export function KPIDashboard({ analytics }) {
     </div>
   );
 }
+

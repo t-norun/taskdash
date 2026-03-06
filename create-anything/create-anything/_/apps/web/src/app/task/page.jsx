@@ -1,483 +1,469 @@
 "use client";
+console.log("🚀 THIS page.jsx IS LOADED 🚀");
 
-import { useState, useEffect, useRef } from "react";
-import { navigate, getQueryParam } from "@/utils/navigation";
-import { GripVertical } from "lucide-react";
-import { authenticatedFetch } from "@/utils/auth";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GripVertical, RefreshCw, BookOpen } from "lucide-react";
+import { navigate } from "@/utils/navigation";
 
-export default function TaskPage() {
-  const [taskId, setTaskId] = useState(null);
-  const [priceUsd, setPriceUsd] = useState(null);
-  const [numbers, setNumbers] = useState([]);
-  const [orderedNumbers, setOrderedNumbers] = useState([]);
-  const [draggedIndex, setDraggedIndex] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [startTime, setStartTime] = useState(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const intervalRef = useRef(null);
+/* ===============================
+   authenticatedFetch
+================================ */
+const API_HTTP = "https://api.taskdash.net";
 
-  // 新規：フェーズ管理（warmup → countdown → task → submitting）
-  const [phase, setPhase] = useState("warmup");
-  const [countdown, setCountdown] = useState(10);
+const authenticatedFetch = async (pathOrUrl, options = {}) => {
+  if (typeof window === "undefined") return fetch(pathOrUrl, options);
 
-  // 練習用の数字（ウォーミングアップ用）
-  const [practiceNumbers] = useState([45, 23, 89, 12, 67, 34, 91, 56, 78, 29]);
-  const [practiceOrdered, setPracticeOrdered] = useState(
-    new Array(10).fill(null),
+  const token = localStorage.getItem("taskdash_access_token") || "";
+  const headers = new Headers(options.headers || {});
+  if (token) headers.set("Authorization", "Bearer " + token);
+
+  const url =
+    typeof pathOrUrl === "string" && pathOrUrl.startsWith("/api/")
+      ? `${API_HTTP}${pathOrUrl}`
+      : pathOrUrl;
+
+  return fetch(url, { ...options, headers });
+};
+
+/* ===============================
+   helpers
+================================ */
+function toNum(v, fallback = 0) {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+const getAttemptIdFromStart = (data) =>
+  String(data?.attempt?.id || data?.attemptId || data?.id || "");
+
+const getNumbersFromStart = (data) => {
+  const nums = data?.attempt?.numbers ?? data?.numbers;
+  return Array.isArray(nums) ? nums : [];
+};
+
+const getAttemptIdFromSubmit = (data, fallbackAttemptId) =>
+  String(
+    data?.attempt?.id ||
+      data?.attemptId ||
+      data?.id ||
+      data?.attempt?.attemptId ||
+      fallbackAttemptId ||
+      ""
   );
 
-  const [waitingForMatch, setWaitingForMatch] = useState(false);
-  const [waitingSubmissionId, setWaitingSubmissionId] = useState(null);
-  const pollIntervalRef = useRef(null);
+/* ===============================
+   TaskPage
+================================ */
+export default function TaskPage() {
+  const [attemptId, setAttemptId] = useState(null);
 
+  const [numbers, setNumbers] = useState([]);
+  const [orderedNumbers, setOrderedNumbers] = useState(Array(10).fill(null));
+
+  const [startTime, setStartTime] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState("loading");
+  const [bootError, setBootError] = useState("");
+
+  // UI state�E�EalanceっぽぁE��E
+  const [selectedPick, setSelectedPick] = useState(null);
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  const startedRef = useRef(false);
+  const draggedIndexRef = useRef(null);
+
+  /* ===============================
+     price (client only)
+  ================================ */
+  const [price, setPrice] = useState(1);
   useEffect(() => {
-    const id = getQueryParam("id");
-    const price = getQueryParam("price");
-    if (!id || !price) {
-      navigate("/");
-      return;
-    }
-    setTaskId(id);
-    setPriceUsd(parseFloat(price));
+    if (typeof window === "undefined") return;
+    const p = Number(new URLSearchParams(window.location.search).get("price") || "1");
+    setPrice(toNum(p, 1));
   }, []);
 
-  useEffect(() => {
-    if (taskId && phase === "warmup") {
-      loadTask();
-    }
-  }, [taskId, phase]);
+  /* ===============================
+     start task
+  ================================ */
+  const startTask = async () => {
+    setBootError("");
+    setPhase("loading");
 
-  // カウントダウンタイマー
-  useEffect(() => {
-    if (phase === "countdown" && countdown > 0) {
-      const timer = setTimeout(() => {
-        setCountdown(countdown - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (phase === "countdown" && countdown === 0) {
-      // カウントダウン終了 → 本番開始
-      setPhase("task");
-      setStartTime(Date.now());
-    }
-  }, [phase, countdown]);
+    const r = await authenticatedFetch("/api/tasks/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ price }),
+    });
 
-  // 本番タイマー（経過時間）
-  useEffect(() => {
-    if (startTime && phase === "task") {
-      intervalRef.current = setInterval(() => {
-        setElapsedTime(Date.now() - startTime);
-      }, 10);
-    }
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [startTime, phase]);
-
-  // 全てのスロットが埋まったら自動送信
-  useEffect(() => {
-    if (
-      phase === "task" &&
-      orderedNumbers.every((n) => n !== null) &&
-      !submitting
-    ) {
-      handleSubmit();
-    }
-  }, [orderedNumbers, phase]);
-
-  // Poll for match when waiting
-  useEffect(() => {
-    if (waitingForMatch && waitingSubmissionId) {
-      pollIntervalRef.current = setInterval(async () => {
-        await checkMatchStatus();
-      }, 3000);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data?.ok === false) {
+      throw new Error(data?.error || "start failed");
     }
 
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-    };
-  }, [waitingForMatch, waitingSubmissionId]);
+    const newAttemptId = getAttemptIdFromStart(data);
+    const nums = getNumbersFromStart(data);
 
-  const loadTask = async () => {
-    try {
-      const response = await authenticatedFetch("/api/tasks/current");
+    if (!newAttemptId) throw new Error("start: missing attempt.id");
+    if (nums.length !== 10) throw new Error("start: numbers missing (need 10)");
 
-      const data = await response.json();
+    setAttemptId(newAttemptId);
+    setNumbers(nums);
+    setOrderedNumbers(Array(10).fill(null));
+    setSelectedPick(null);
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to load task");
-      }
-
-      setNumbers(data.numbers);
-      setOrderedNumbers(new Array(10).fill(null));
-    } catch (error) {
-      alert(error.message);
-      navigate("/");
-    }
+    setStartTime(Date.now());
+    setPhase("task");
   };
 
-  const handleDragStart = (e, index, fromSource = true) => {
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/html", e.target.innerHTML);
-    setDraggedIndex({ index, fromSource });
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    (async () => {
+      try {
+        await startTask();
+      } catch (e) {
+        const msg = e?.message ? e.message : String(e);
+        console.error("START_ERROR=", msg);
+        setBootError(msg);
+        setPhase("loading");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [price]);
+
+  /* ===============================
+     drag & drop
+  ================================ */
+  const handleDragStart = (index) => {
+    draggedIndexRef.current = index;
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
+  const handleDrop = (targetIndex) => {
+    if (draggedIndexRef.current == null) return;
 
-  const handleDropToSlot = (e, targetIndex) => {
-    e.preventDefault();
+    const srcIdx = draggedIndexRef.current;
+    const picked = numbers[srcIdx];
 
-    if (draggedIndex === null) return;
-
-    // 本番中は全て埋まった後の変更不可（自動送信されるので実質不要だが念のため）
-    if (phase === "task" && orderedNumbers.every((n) => n !== null)) {
+    if (picked == null) {
+      draggedIndexRef.current = null;
       return;
     }
 
-    const isWarmup = phase === "warmup";
-    const currentOrdered = isWarmup
-      ? [...practiceOrdered]
-      : [...orderedNumbers];
+    const next = [...orderedNumbers];
+    next[targetIndex] = picked;
+    setOrderedNumbers(next);
+    setSelectedPick(null);
 
-    if (draggedIndex.fromSource) {
-      const sourceNumbers = isWarmup ? practiceNumbers : numbers;
-      currentOrdered[targetIndex] = sourceNumbers[draggedIndex.index];
-    } else {
-      const temp = currentOrdered[targetIndex];
-      currentOrdered[targetIndex] = currentOrdered[draggedIndex.index];
-      currentOrdered[draggedIndex.index] = temp;
-    }
-
-    if (isWarmup) {
-      setPracticeOrdered(currentOrdered);
-    } else {
-      setOrderedNumbers(currentOrdered);
-    }
-    setDraggedIndex(null);
+    draggedIndexRef.current = null;
   };
 
-  const handleReadyForReal = () => {
-    setPhase("countdown");
-    setCountdown(10);
+  /* ===============================
+     click-to-place (数字もcreate寁E��)
+  ================================ */
+  const onPickClick = (num) => {
+    if (submitting) return;
+    setSelectedPick((prev) => (prev === num ? null : num));
   };
 
-  const handleSubmit = async () => {
-    if (orderedNumbers.some((n) => n === null)) {
-      return;
-    }
-
-    setSubmitting(true);
-    const timeMs = Date.now() - startTime;
-
-    try {
-      const response = await authenticatedFetch("/api/tasks/submit", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          taskSetId: parseInt(taskId),
-          orderedNumbers,
-          timeMs,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to submit");
-      }
-
-      if (data.status === "waiting") {
-        // Start waiting for match
-        setWaitingForMatch(true);
-        setWaitingSubmissionId(data.submissionId);
-        setPhase("waiting");
-      } else {
-        // Immediate match or error
-        navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
-      }
-    } catch (error) {
-      alert(error.message);
-      setSubmitting(false);
-    }
+  const onSlotClick = (i) => {
+    if (submitting) return;
+    if (selectedPick == null) return;
+    const next = [...orderedNumbers];
+    next[i] = selectedPick;
+    setOrderedNumbers(next);
+    setSelectedPick(null);
   };
 
-  const checkMatchStatus = async () => {
-    try {
-      const response = await authenticatedFetch(
-        `/api/tasks/check-match?submissionId=${waitingSubmissionId}`,
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to check match");
-      }
-
-      if (data.status === "matched") {
-        // Match found! Redirect to results
-        clearInterval(pollIntervalRef.current);
-        navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
-      } else if (data.status === "timeout") {
-        // Timeout - redirect with timeout message
-        clearInterval(pollIntervalRef.current);
-        navigate(
-          `/results?data=${encodeURIComponent(
-            JSON.stringify({ status: "timeout", message: data.message }),
-          )}`,
-        );
-      }
-      // If still waiting, continue polling
-    } catch (error) {
-      console.error("Failed to check match:", error);
-    }
+  const onReset = () => {
+    setOrderedNumbers(Array(10).fill(null));
+    setSelectedPick(null);
+    setStartTime(Date.now()); // 時間もリセチE���E��E平�E�E
+    setShowResetModal(false);
   };
 
-  // ウォーミングアップ画面
-  if (phase === "warmup") {
+  /* ===============================
+     auto submit
+  ================================ */
+  useEffect(() => {
+    if (phase !== "task") return;
+    if (submitting) return;
+    if (!attemptId) return;
+    if (!startTime) return;
+    if (orderedNumbers.some((n) => n == null)) return;
+
+    (async () => {
+      try {
+        setSubmitting(true);
+
+        const timeMs = Math.max(0, Date.now() - startTime);
+        const answer = orderedNumbers.map((n) => Number(n));
+
+        const r = await authenticatedFetch("/api/tasks/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attemptId,
+            orderedNumbers: answer,
+            numbers: answer,
+            timeMs,
+            elapsedMs: timeMs,
+            durationMs: timeMs,
+          }),
+        });
+
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data?.ok === false) {
+          throw new Error(data?.error || "submit failed");
+        }
+
+        const idForResult = getAttemptIdFromSubmit(data, attemptId);
+        navigate(`/result/${idForResult}`);
+      } catch (e) {
+        alert(e?.message || String(e));
+      } finally {
+        setSubmitting(false);
+      }
+    })();
+  }, [orderedNumbers, phase, submitting, attemptId, startTime]);
+
+  /* ===============================
+     derived
+  ================================ */
+  const filledCount = useMemo(
+    () => orderedNumbers.filter((n) => n != null).length,
+    [orderedNumbers]
+  );
+
+  /* ===============================
+     UI (Balance完�E移椁E
+  ================================ */
+  if (phase === "loading" && !bootError) {
     return (
-      <div className="min-h-screen bg-white font-inter">
-        <div className="border-b border-[#EDEDED]">
-          <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
-              <span className="text-[16px] font-semibold text-[#2B2B2B]">
-                Task Dash {priceUsd && `- $${priceUsd}`}
-              </span>
-            </div>
-          </div>
-        </div>
+      <div className="min-h-screen bg-white font-inter flex items-center justify-center">
+        <div className="text-[14px] text-[#7A7A7A]">Loading...</div>
+      </div>
+    );
+  }
 
-        <div className="max-w-[800px] mx-auto px-6 py-8">
-          <div className="bg-[#FEF3C7] border border-[#F59E0B] rounded-xl p-6 mb-6">
-            <h2 className="text-[18px] font-semibold text-[#92400E] mb-3">
-              📋 Task Rules
-            </h2>
-            <ul className="space-y-2 text-[14px] text-[#78350F]">
-              <li>
-                • <strong>Goal:</strong> Sort 10 numbers in descending order
-                (largest → smallest)
-              </li>
-              <li>
-                • <strong>Method:</strong> Drag numbers from the pool into all
-                10 slots
-              </li>
-              <li>
-                • <strong>Important:</strong> Once all slots are filled, the
-                task auto-submits immediately
-              </li>
-              <li>
-                • <strong>No changes after:</strong> You cannot rearrange
-                numbers after all slots are filled
-              </li>
-              <li>
-                • <strong>Speed matters:</strong> Faster + accurate = better
-                rewards
-              </li>
-              <li>
-                • <strong>Fair difficulty:</strong> Numbers are randomly
-                generated (0-99) with controlled patterns to ensure consistent
-                difficulty for all users
-              </li>
-            </ul>
-          </div>
+  if (bootError) {
+    return (
+      <div className="min-h-screen bg-white font-inter flex items-center justify-center p-6">
+        <div className="max-w-[720px] w-full border border-[#F1F1F1] rounded-xl p-6">
+          <div className="text-[16px] font-semibold text-[#2B2B2B] mb-2">Error</div>
+          <pre className="text-[12px] text-[#C33] whitespace-pre-wrap">{bootError}</pre>
 
-          <div className="bg-white border border-[#F1F1F1] rounded-xl p-8">
-            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-2">
-              Practice Here
-            </h3>
-            <p className="text-[14px] text-[#7A7A7A] mb-6">
-              Try sorting these practice numbers. This won't affect your score.
-            </p>
-
-            <div className="mb-8">
-              <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">
-                Your Practice Answer:
-              </div>
-              <div className="grid grid-cols-5 gap-3">
-                {practiceOrdered.map((num, index) => (
-                  <div
-                    key={index}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDropToSlot(e, index)}
-                    className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
-                      num === null
-                        ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
-                        : "border-[#10B981] bg-[#ECFDF5] text-[#10B981] cursor-move"
-                    }`}
-                    draggable={num !== null}
-                    onDragStart={(e) =>
-                      num !== null && handleDragStart(e, index, false)
-                    }
-                  >
-                    {num === null ? index + 1 : num}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">
-                Practice Number Pool:
-              </div>
-              <div className="grid grid-cols-5 gap-3">
-                {practiceNumbers.map((num, index) => (
-                  <div
-                    key={index}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, index, true)}
-                    className="h-[80px] bg-white border-2 border-[#E5E5E5] rounded-lg flex items-center justify-center text-[24px] font-semibold text-[#2B2B2B] cursor-move hover:border-[#10B981] hover:bg-[#F8FAFC]"
-                  >
-                    <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
-                    {num}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-[#EDEDED]">
-              <button
-                onClick={handleReadyForReal}
-                className="w-full h-[56px] bg-[#10B981] text-white text-[16px] font-semibold rounded-lg hover:bg-[#059669]"
-              >
-                Ready for Real Task →
-              </button>
-            </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => navigate("/balance")}
+              className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] hover:border-[#2563FF] hover:text-[#2563FF]"
+            >
+              Back
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  setBootError("");
+                  await startTask();
+                } catch (e) {
+                  setBootError(e?.message ?? String(e));
+                }
+              }}
+              className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
+            >
+              Retry
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
-  // カウントダウン画面
-  if (phase === "countdown") {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#2563FF] to-[#1E40AF] font-inter flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-white text-[120px] font-bold mb-6">
-            {countdown}
-          </div>
-          <div className="text-[24px] text-blue-100 font-medium">
-            Get Ready...
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Waiting phase
-  if (phase === "waiting") {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#2563FF] to-[#1E40AF] font-inter flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
-          <div className="text-[24px] text-white font-semibold mb-2">
-            Waiting for Opponent...
-          </div>
-          <div className="text-[16px] text-blue-100">
-            Looking for a match at ${priceUsd}
-          </div>
-          <div className="text-[14px] text-blue-200 mt-4">
-            Your time: {(elapsedTime / 1000).toFixed(2)}s
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 本番タスク画面
+  // phase === "task"
   return (
     <div className="min-h-screen bg-white font-inter">
+      {/* Top bar (Balanceと同じ) */}
       <div className="border-b border-[#EDEDED]">
         <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
             <span className="text-[16px] font-semibold text-[#2B2B2B]">
-              Task Dash {priceUsd && `- $${priceUsd}`}
+              Task Dash (DEV)
             </span>
           </div>
 
-          <div className="text-[20px] font-mono font-semibold text-[#2563FF]">
-            {(elapsedTime / 1000).toFixed(2)}s
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowResetModal(true)}
+              disabled={submitting}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg hover:border-[#2563FF] disabled:opacity-50"
+            >
+              <RefreshCw size={16} />
+              Reset
+            </button>
+
+            <a
+              href="/rules"
+              className="flex items-center gap-2 px-3 py-2 border border-[#E5E5E5] rounded-lg text-[13px] font-semibold text-[#7A7A7A] hover:border-[#2563FF] hover:text-[#2563FF]"
+            >
+              <BookOpen size={16} />
+              Rules
+            </a>
           </div>
         </div>
       </div>
 
       <div className="max-w-[800px] mx-auto px-6 py-8">
-        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8">
-          <h1 className="text-[20px] font-semibold text-[#2B2B2B] mb-2">
-            Sort Numbers in Descending Order
-          </h1>
-          <p className="text-[14px] text-[#7A7A7A] mb-8">
-            Drag numbers from the pool below into the slots. Auto-submits when
-            all slots are filled.
-          </p>
-
-          <div className="mb-8">
-            <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">
-              Your Answer:
-            </div>
-            <div className="grid grid-cols-5 gap-3">
-              {orderedNumbers.map((num, index) => (
-                <div
-                  key={index}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDropToSlot(e, index)}
-                  className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
-                    num === null
-                      ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
-                      : "border-[#2563FF] bg-[#EFF6FF] text-[#2563FF] cursor-move"
-                  }`}
-                  draggable={num !== null && !submitting}
-                  onDragStart={(e) =>
-                    num !== null &&
-                    !submitting &&
-                    handleDragStart(e, index, false)
-                  }
-                >
-                  {num === null ? index + 1 : num}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">
-              Number Pool:
-            </div>
-            <div className="grid grid-cols-5 gap-3">
-              {numbers.map((num, index) => (
-                <div
-                  key={index}
-                  draggable={!submitting}
-                  onDragStart={(e) =>
-                    !submitting && handleDragStart(e, index, true)
-                  }
-                  className="h-[80px] bg-white border-2 border-[#E5E5E5] rounded-lg flex items-center justify-center text-[24px] font-semibold text-[#2B2B2B] cursor-move hover:border-[#2563FF] hover:bg-[#F8FAFC]"
-                >
-                  <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
-                  {num}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {submitting && (
-            <div className="mt-8 pt-6 border-t border-[#EDEDED]">
-              <div className="text-center text-[16px] text-[#2563FF] font-semibold">
-                Submitting...
+        {/* Main card (Balanceと同じ) */}
+        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 mb-6">
+          <div className="flex items-start justify-between gap-6 mb-6">
+            <div className="flex-1">
+              <div className="text-[13px] text-[#7A7A7A] mb-1">Arrange Numbers</div>
+              <div className="text-[24px] font-semibold text-[#2B2B2B]">
+                Fill all 10 slots
+              </div>
+              <div className="text-[12px] text-[#7A7A7A] mt-1">
+                Price: <span className="font-semibold text-[#2B2B2B]">${toNum(price, 1)}</span>{" "}
+                · Progress:{" "}
+                <span className="font-semibold text-[#2B2B2B]">
+                  {filledCount}/10
+                </span>
+              </div>
+              <div className="text-[12px] text-[#7A7A7A] mt-1">
+                attemptId:{" "}
+                <span className="font-mono text-[#2B2B2B]">{attemptId}</span>
               </div>
             </div>
-          )}
+
+            {/* 状態表示�E�Ealanceのト�Eン�E�E*/}
+            <div className="text-right">
+              {submitting ? (
+                <div className="text-[13px] font-semibold text-[#2563FF]">
+                  Submitting...
+                </div>
+              ) : selectedPick != null ? (
+                <div className="text-[13px] font-semibold text-[#10B981]">
+                  Selected: {selectedPick}
+                </div>
+              ) : (
+                <div className="text-[13px] text-[#7A7A7A]">
+                  Click a number, then click a slot
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Slots�E�Ealanceのボタン規格で再現�E�E*/}
+          <div className="grid grid-cols-5 gap-2 mb-6">
+            {orderedNumbers.map((num, i) => {
+              const has = num != null;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onSlotClick(i)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDrop(i)}
+                  disabled={submitting}
+                  className={`h-[60px] rounded-lg text-[18px] font-semibold transition-all relative border-2 ${
+                    has
+                      ? "bg-white text-[#2B2B2B] border-[#2563FF]"
+                      : selectedPick != null
+                      ? "bg-[#EFF6FF] text-[#2B2B2B] border-[#2563FF] hover:bg-[#E8F0FF]"
+                      : "bg-white text-[#2B2B2B] border-[#E5E5E5] hover:border-[#2563FF]"
+                  } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
+                >
+                  {has ? num : i + 1}
+                  {!has && (
+                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#9B9B9B] rounded-full flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-white">{i + 1}</span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Picks�E�価格ボタンの見た目で完�E一致方向！E*/}
+          <div className="mb-3">
+            <div className="text-[14px] font-medium text-[#2B2B2B] mb-3">
+              Numbers
+            </div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {numbers.map((num, i) => {
+                const active = selectedPick === num;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    draggable={!submitting}
+                    onDragStart={() => handleDragStart(i)}
+                    onClick={() => onPickClick(num)}
+                    disabled={submitting}
+                    className={`h-[60px] rounded-lg text-[18px] font-semibold transition-all relative border-2 ${
+                      active
+                        ? "bg-[#2563FF] text-white border-2 border-[#2563FF]"
+                        : "bg-white text-[#2B2B2B] border-2 border-[#E5E5E5] hover:border-[#2563FF]"
+                    } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <GripVertical size={14} className={active ? "opacity-80" : "opacity-50"} />
+                      {num}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-[12px] text-[#7A7A7A] mt-4">
+            Tip: Drag & drop also works. (UI is aligned to Balance page)
+          </p>
         </div>
+
+        <a
+          href="/balance"
+          className="w-full h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] flex items-center justify-center gap-2 hover:border-[#2563FF] hover:text-[#2563FF]"
+        >
+          Back to Dashboard
+        </a>
       </div>
+
+      {/* Reset Modal�E�EalanceのAddFundsモーダル完�E移植！E*/}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">
+              Reset Task
+            </h3>
+            <p className="text-[13px] text-[#7A7A7A] mb-6">
+              This clears all slots and resets the timer.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowResetModal(false)}
+                disabled={submitting}
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={onReset}
+                disabled={submitting}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
+

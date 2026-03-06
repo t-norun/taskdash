@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@/utils/auth";
 import { useState, useEffect, useCallback } from "react";
 
 export const useUser = () => {
@@ -14,10 +15,18 @@ export const useUser = () => {
     }
 
     try {
-      const response = await fetch("/api/jwt/session", {
+<<<<<<< HEAD
+      const response = await authenticatedFetch("/api/jwt/session", {
+=======
+      const API_BASE = import.meta.env.VITE_API_BASE_URL;
+      console.log("VITE_ENV_TEST =", import.meta.env.VITE_ENV_TEST);
+      const response = await fetch(`${API_BASE}/api/jwt/session`, {
+>>>>>>> split-api
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        cache: "no-store",
+        credentials: "include",
       });
 
       if (!response.ok) {
@@ -49,3 +58,4 @@ export const useUser = () => {
 };
 
 export default useUser;
+

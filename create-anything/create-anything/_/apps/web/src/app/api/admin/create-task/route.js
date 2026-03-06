@@ -34,7 +34,7 @@ export async function POST(request) {
   }
 }
 
-// 制御付きランダム数字生成
+// 制御付きランダム数字生戁E
 function generateControlledNumbers() {
   const numbers = [];
   const maxAttempts = 1000;
@@ -44,20 +44,20 @@ function generateControlledNumbers() {
     attempts++;
     const num = Math.floor(Math.random() * 100);
 
-    // 重複チェック
+    // 重褁E��ェチE��
     if (numbers.includes(num)) continue;
 
-    // 連番チェック（前後1の数字が既に存在する場合は除外）
+    // 連番チェチE���E�前征Eの数字が既に存在する場合�E除外！E
     if (isConsecutive(num, numbers)) continue;
 
-    // ゾロ目チェック（11,22,33など最大2個まで）
+    // ゾロ目チェチE���E�E1,22,33など最大2個まで�E�E
     if (isDoubleDigit(num) && countDoubleDigits(numbers) >= 2) continue;
 
     numbers.push(num);
   }
 
-  // 2桁比率チェック（1桁3-4個、2桁6-7個）
-  // もし条件を満たさない場合は再生成
+  // 2桁比率チェチE���E�E桁E-4個、E桁E-7個！E
+  // もし条件を満たさなぁE��合�E再生戁E
   const singleDigitCount = numbers.filter((n) => n < 10).length;
   if (singleDigitCount < 3 || singleDigitCount > 4) {
     return generateControlledNumbers();
@@ -66,19 +66,20 @@ function generateControlledNumbers() {
   return numbers;
 }
 
-// 連番チェック（n-1 or n+1が既に存在するか）
+// 連番チェチE���E�E-1 or n+1が既に存在するか！E
 function isConsecutive(num, existingNumbers) {
   return existingNumbers.includes(num - 1) || existingNumbers.includes(num + 1);
 }
 
-// ゾロ目判定（11,22,33...）
+// ゾロ目判定！E1,22,33...�E�E
 function isDoubleDigit(num) {
   if (num < 11) return false;
   const str = num.toString();
   return str.length === 2 && str[0] === str[1];
 }
 
-// 既存配列内のゾロ目をカウント
+// 既存�E列�Eのゾロ目をカウンチE
 function countDoubleDigits(numbers) {
   return numbers.filter(isDoubleDigit).length;
 }
+

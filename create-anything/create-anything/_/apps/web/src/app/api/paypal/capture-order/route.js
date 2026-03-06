@@ -2,108 +2,193 @@ import sql from "../../utils/sql";
 import { paypalRequest } from "#/app/api/paypal/utils/auth";
 import { authenticateUser } from "../../utils/auth";
 
+const V2_BASE =
+  process.env.V2_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
+  "https://api.taskdash.net";
+
+function forwardHeaders(request) {
+  const h = new Headers();
+
+  const auth = request.headers.get("authorization");
+  if (auth) h.set("authorization", auth);
+
+  const cookie = request.headers.get("cookie");
+  if (cookie) h.set("cookie", cookie);
+
+  // v2 dev endpoint を叩くなら忁E��E��あなた�E環墁E��と x-dev-key あるはず！E
+  const devKey =
+    request.headers.get("x-dev-key") ||
+    process.env.V2_DEV_KEY ||
+    process.env.NEXT_PUBLIC_V2_DEV_KEY;
+  if (devKey) h.set("x-dev-key", devKey);
+
+  h.set("content-type", "application/json");
+  return h;
+}
+
+async function creditToV2({ request, userId, captureId, amountUsd }) {
+  const amountCents = Math.round(Number(amountUsd) * 100);
+
+  // v2 入金候補（環墁E��吸収！E
+  const candidates = [
+    // 本命�E�あなたがすでに使ってぁEdev 入釁E
+    {
+      url: `${V2_BASE}/dev/tx/entry`,
+      body: { userId, transactionId: captureId, amount: amountCents },
+    },
+    // もし封E��、正式な入金APIができた場吁E
+    {
+      url: `${V2_BASE}/tx/deposit`,
+      body: { userId, transactionId: captureId, amountCents },
+    },
+    {
+      url: `${V2_BASE}/wallet/deposit`,
+      body: { userId, transactionId: captureId, amountCents },
+    },
+  ];
+
+  let last = null;
+
+  for (const c of candidates) {
+    const res = await fetch(c.url, {
+      method: "POST",
+      headers: forwardHeaders(request),
+      body: JSON.stringify(c.body),
+      cache: "no-store",
+    });
+
+    if (res.status === 404) continue;
+
+    const data = await res.json().catch(() => ({}));
+    last = { url: c.url, status: res.status, data };
+
+    if (!res.ok || data?.ok === false) {
+      // 404以外�E失敗�E打ち刁E��
+      break;
+    }
+
+    return { ok: true, data, amountCents };
+  }
+
+  return { ok: false, last, amountCents };
+}
+
+async function fetchV2UserBalanceUsd({ request, userId }) {
+  // v2 wallet 取得候裁E
+  const candidates = [
+    `${V2_BASE}/wallets/by-user?userId=${encodeURIComponent(userId)}`,
+    `${V2_BASE}/dev/wallets/by-user?userId=${encodeURIComponent(userId)}`,
+    `${V2_BASE}/me/wallets`,
+  ];
+
+  for (const url of candidates) {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: forwardHeaders(request),
+      cache: "no-store",
+    });
+    if (res.status === 404) continue;
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) break;
+
+    const wallets = Array.isArray(data?.wallets) ? data.wallets : Array.isArray(data) ? data : null;
+    if (!wallets) break;
+
+    const userWallet = wallets.find((w) => String(w.type).toUpperCase() === "USER");
+    const balCents = Number(userWallet?.balance);
+    if (Number.isFinite(balCents)) return balCents / 100;
+    break;
+  }
+
+  return null;
+}
+
 /**
- * PayPal決済を確定し、ユーザー残高に追加
+ * PayPal決済を確定し、v2 wallet に入釁E
  */
 export async function POST(request) {
   try {
     const user = await authenticateUser(request);
-
     const { orderId } = await request.json();
 
-    console.log(
-      `💵 Capturing PayPal order for user ${user.id}, orderId: ${orderId}`,
-    );
+    console.log(`💵 Capturing PayPal order for user ${user.id}, orderId: ${orderId}`);
 
     if (!orderId) {
       return Response.json({ error: "Order ID required" }, { status: 400 });
     }
 
-    console.log(`📤 Sending capture request to PayPal for order ${orderId}`);
+    // 1) PayPalで決済を確宁E
+    const captureData = await paypalRequest(`/v2/checkout/orders/${orderId}/capture`, {
+      method: "POST",
+    });
 
-    // PayPalで決済を確定
-    const captureData = await paypalRequest(
-      `/v2/checkout/orders/${orderId}/capture`,
-      {
-        method: "POST",
-      },
-    );
-
-    console.log(
-      "📥 PayPal capture response:",
-      JSON.stringify(captureData, null, 2),
-    );
-
-    // 決済金額を取得
     const captureAmount = parseFloat(
-      captureData.purchase_units[0].payments.captures[0].amount.value,
+      captureData.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value,
     );
-    const captureId = captureData.purchase_units[0].payments.captures[0].id;
+    const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id;
 
-    console.log(
-      `💰 Capture amount: $${captureAmount}, captureId: ${captureId}`,
-    );
+    if (!Number.isFinite(captureAmount) || !captureId) {
+      return Response.json(
+        { error: "Invalid PayPal capture response", debug: captureData },
+        { status: 502 },
+      );
+    }
 
-    // トランザクション内で処理
+    console.log(`💰 Capture amount: $${captureAmount}, captureId: ${captureId}`);
+
+    // 2) v2 に入金！EaptureId めEtransactionId にして二重計上を防ぐ！E
+    const credit = await creditToV2({
+      request,
+      userId: String(user.id),
+      captureId: String(captureId),
+      amountUsd: captureAmount,
+    });
+
+    if (!credit.ok) {
+      return Response.json(
+        {
+          error: "Failed to credit v2 wallet",
+          debug: credit.last,
+        },
+        { status: 502 },
+      );
+    }
+
+    // 3) legacy 側は「PayPal取引ログ」だけ更新�E�残してもOK・消してもOK�E�E
+    // ※ここで users.balance / ledger は更新しなぁE��E2を正にする�E�E
     await sql.transaction([
-      // ユーザー残高に追加
-      sql`
-        UPDATE users
-        SET balance = balance + ${captureAmount}
-        WHERE id = ${user.id}
-      `,
-
-      // Ledgerに入金記録
-      sql`
-        INSERT INTO ledger (
-          user_id, type, amount, 
-          paypal_order_id, paypal_capture_id, note
-        ) VALUES (
-          ${user.id},
-          'deposit',
-          ${captureAmount},
-          ${orderId},
-          ${captureId},
-          'PayPal deposit - Balance added'
-        )
-      `,
-
-      // PayPal取引を更新
       sql`
         UPDATE paypal_transactions
-        SET 
+        SET
           status = 'COMPLETED',
-          capture_id = ${captureId},
+          capture_id = ${String(captureId)},
           raw_response = ${JSON.stringify(captureData)}
         WHERE order_id = ${orderId}
       `,
     ]);
 
-    console.log(
-      `📊 Transaction completed, fetching updated balance for user ${user.id}`,
-    );
-
-    // 更新された残高を取得
-    const [updatedUser] = await sql`
-      SELECT balance, reserved_balance
-      FROM users
-      WHERE id = ${user.id}
-    `;
-
-    console.log(`✅ Capture successful! New balance: $${updatedUser.balance}`);
+    // 4) v2の残高を返す�E�取れなければ null�E�E
+    const newBalanceUsd = await fetchV2UserBalanceUsd({
+      request,
+      userId: String(user.id),
+    });
 
     return Response.json({
       success: true,
       captureId,
       amount: captureAmount,
-      newBalance: parseFloat(updatedUser.balance),
+      newBalance: newBalanceUsd, // v2から取れたら数値、取れなければ null
+      // チE��チE��用に残しておく�E�不要なら消してOK�E�E
+      v2: credit.data,
     });
   } catch (error) {
-    console.error("❌ Capture PayPal order error:", error);
-    console.error("Error details:", error.message, error.stack);
+    console.error("❁ECapture PayPal order error:", error);
     return Response.json(
-      { error: error.message || "Failed to capture order" },
-      { status: error.message?.includes("Unauthorized") ? 401 : 500 },
+      { error: error?.message || "Failed to capture order" },
+      { status: error?.message?.includes("Unauthorized") ? 401 : 500 },
     );
   }
 }
+

@@ -2,7 +2,7 @@ import { getPayPalMode } from "#/app/api/paypal/utils/auth";
 import sql from "../../utils/sql";
 
 /**
- * 現在のPayPalモード取得（Admin用）
+ * 現在のPayPalモード取得！Edmin用�E�E
  */
 export async function GET(request) {
   try {
@@ -42,3 +42,4 @@ export async function GET(request) {
     return Response.json({ error: "Failed to get mode" }, { status: 500 });
   }
 }
+

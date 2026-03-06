@@ -29,3 +29,4 @@ export function AdminTabs({ activeTab, setActiveTab }) {
     </div>
   );
 }
+

@@ -1,11 +1,11 @@
 import { extractBearerToken, verifyAccessToken } from "../../utils/jwt";
 
 export async function GET(request) {
-  // クエリパラメータからトークンを取得（Expo WebViewからの場合）
+  // クエリパラメータからト�Eクンを取得！Expo WebViewからの場合！E
   const url = new URL(request.url);
   const tokenFromQuery = url.searchParams.get("token");
 
-  // Bearerトークンまたはクエリパラメータから取得
+  // Bearerト�Eクンまた�Eクエリパラメータから取征E
   const token = tokenFromQuery || extractBearerToken(request);
 
   if (!token) {
@@ -76,3 +76,4 @@ export async function GET(request) {
     },
   );
 }
+

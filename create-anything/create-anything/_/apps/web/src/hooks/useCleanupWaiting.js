@@ -10,7 +10,9 @@ export function useCleanupWaiting() {
     setCleanupResult(null);
 
     try {
-      const response = await fetch("/api/tasks/cleanup-waiting", {
+      const API_BASE =
+        import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
+      const response = await fetch(`${API_BASE}/api/tasks/cleanup-waiting`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -35,3 +37,4 @@ export function useCleanupWaiting() {
     handleCleanupWaiting,
   };
 }
+

@@ -7,7 +7,7 @@ import {
 } from "../../utils/jwt";
 
 /**
- * Access Tokenをリフレッシュ
+ * Access TokenをリフレチE��ュ
  * POST /api/auth/refresh
  * Body: { refreshToken, refreshTokenId }
  */
@@ -31,7 +31,7 @@ export async function POST(request) {
       );
     }
 
-    // DB内のRefresh Tokenを確認
+    // DB冁E�ERefresh Tokenを確誁E
     const sessions = await sql`
       SELECT s.*, u.email 
       FROM sessions s
@@ -50,14 +50,14 @@ export async function POST(request) {
 
     const session = sessions[0];
 
-    // 新しいAccess Tokenを発行
+    // 新しいAccess Tokenを発衁E
     const newAccessToken = generateAccessToken(userId, session.email);
 
-    // オプション: Refresh Tokenもローテーション（セキュリティ強化）
+    // オプション: Refresh TokenもローチE�Eション�E�セキュリチE��強化！E
     const newRefreshToken = generateRefreshToken(userId);
     const newRefreshTokenId = generateRefreshTokenId();
 
-    // 古いRefresh Tokenを削除し、新しいものを保存
+    // 古いRefresh Tokenを削除し、新しいも�Eを保孁E
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await sql.transaction([
       sql`DELETE FROM sessions WHERE token = ${refreshTokenId}`,
@@ -79,3 +79,4 @@ export async function POST(request) {
     return Response.json({ error: "Failed to refresh token" }, { status: 500 });
   }
 }
+

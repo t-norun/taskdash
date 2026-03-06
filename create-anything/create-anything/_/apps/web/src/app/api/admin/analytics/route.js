@@ -1,6 +1,6 @@
 import sql from "../../utils/sql";
 
-// 管理者権限チェック
+// 管琁E��E��限チェチE��
 function isAdmin(email) {
   return email === "taskdash.llc@gmail.com";
 }
@@ -29,7 +29,7 @@ export async function GET(request) {
       return Response.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    // 今日の範囲
+    // 今日の篁E��
     const today = await sql`
       SELECT 
         COUNT(DISTINCT id) as transactions,
@@ -40,7 +40,7 @@ export async function GET(request) {
       AND type = 'task_fee'
     `;
 
-    // 今週の範囲
+    // 今週の篁E��
     const thisWeek = await sql`
       SELECT 
         COUNT(DISTINCT id) as transactions,
@@ -51,7 +51,7 @@ export async function GET(request) {
       AND type = 'task_fee'
     `;
 
-    // 今月の範囲
+    // 今月の篁E��
     const thisMonth = await sql`
       SELECT 
         COUNT(DISTINCT id) as transactions,
@@ -72,7 +72,7 @@ export async function GET(request) {
       WHERE type = 'task_fee'
     `;
 
-    // ユーザーへの総支払額（勝利報酬）
+    // ユーザーへの総支払額（勝利報酬�E�E
     const userPayouts = await sql`
       SELECT 
         COALESCE(SUM(amount), 0) as total_user_payouts
@@ -80,7 +80,7 @@ export async function GET(request) {
       WHERE type = 'win'
     `;
 
-    // アクティブユーザー
+    // アクチE��ブユーザー
     const dau = await sql`
       SELECT COUNT(DISTINCT user_id) as count
       FROM sessions
@@ -137,3 +137,4 @@ export async function GET(request) {
     );
   }
 }
+

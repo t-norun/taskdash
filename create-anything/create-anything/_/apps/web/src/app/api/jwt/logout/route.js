@@ -2,14 +2,14 @@ import sql from "../../utils/sql";
 import { extractBearerToken, verifyAccessToken } from "../../utils/jwt";
 
 /**
- * ログアウト（Refresh Tokenを失効）
+ * ログアウト！Eefresh Tokenを失効�E�E
  * POST /api/auth/logout
- * Body: { refreshTokenId } (optional - 指定されたトークンのみ削除)
- * または全セッション削除
+ * Body: { refreshTokenId } (optional - 持E��されたト�Eクンのみ削除)
+ * また�E全セチE��ョン削除
  */
 export async function POST(request) {
   try {
-    // Access Tokenからユーザー情報を取得
+    // Access Tokenからユーザー惁E��を取征E
     const token = extractBearerToken(request);
     if (!token) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,14 +23,14 @@ export async function POST(request) {
     const { refreshTokenId } = await request.json().catch(() => ({}));
 
     if (refreshTokenId) {
-      // 特定のRefresh Tokenのみ削除（デバイス単位のログアウト）
+      // 特定�ERefresh Tokenのみ削除�E�デバイス単位�Eログアウト！E
       await sql`
         DELETE FROM sessions 
         WHERE token = ${refreshTokenId}
         AND user_id = ${payload.userId}
       `;
     } else {
-      // 全セッションを削除（全デバイスからログアウト）
+      // 全セチE��ョンを削除�E��EチE��イスからログアウト！E
       await sql`
         DELETE FROM sessions 
         WHERE user_id = ${payload.userId}
@@ -46,3 +46,4 @@ export async function POST(request) {
     return Response.json({ error: "Failed to logout" }, { status: 500 });
   }
 }
+

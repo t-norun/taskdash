@@ -3,7 +3,7 @@ import { paypalRequest } from "#/app/api/paypal/utils/auth";
 import { authenticateUser } from "../../utils/auth";
 
 /**
- * ユーザー入金用のPayPal決済を作成
+ * ユーザー入金用のPayPal決済を作�E
  */
 export async function POST(request) {
   try {
@@ -11,54 +11,51 @@ export async function POST(request) {
 
     const { amount } = await request.json();
 
-    console.log(
-      `💰 Creating PayPal order for user ${user.id}, amount: $${amount}`,
-    );
-
-    if (!amount || amount < 1 || amount > 500) {
+    // 1) 金額を「cents」で確定（端数ブレ防止�E�E
+    const amountNum = Number(amount);
+    if (!Number.isFinite(amountNum) || amountNum < 1 || amountNum > 500) {
       return Response.json(
         { error: "Amount must be between $1 and $500" },
         { status: 400 },
       );
     }
 
-    // APP_URL の取得（実際のリクエスト元を優先）
+    const amountCents = Math.round(amountNum * 100);
+    const amountUsd = amountCents / 100;
+
+    console.log(`💰 Creating PayPal order for user ${user.id}, amount: $${amountUsd.toFixed(2)}`);
+
+    // 2) APP_URL の取得（実際のリクエスト�Eを優先！E
     let appUrl = process.env.APP_URL;
 
     if (!appUrl) {
-      // origin ヘッダー（実際のUIドメイン）を最優先
       const origin = request.headers.get("origin");
       if (origin) {
         appUrl = origin;
-        console.log(`✅ Using origin header as APP_URL: ${appUrl}`);
+        console.log(`✁EUsing origin header as APP_URL: ${appUrl}`);
       } else {
-        // fallback: host から構築
         const host = request.headers.get("host");
         const protocol = request.headers.get("x-forwarded-proto") || "https";
         appUrl = `${protocol}://${host}`;
-        console.log(
-          `⚠️  APP_URL not set, using derived URL from host: ${appUrl}`,
-        );
+        console.log(`⚠�E�E APP_URL not set, using derived URL from host: ${appUrl}`);
       }
     } else {
-      console.log(`✅ Using APP_URL from env: ${appUrl}`);
+      console.log(`✁EUsing APP_URL from env: ${appUrl}`);
     }
 
-    // 確実に return/cancel URL を構築
     const returnUrl = `${appUrl}/paypal-success`;
     const cancelUrl = `${appUrl}/?cancelled=true`;
 
-    console.log(`🔗 Return URL: ${returnUrl}`);
-    console.log(`🔗 Cancel URL: ${cancelUrl}`);
-
-    // PayPal v2 Orders API に従った最小構成
+    // 3) PayPal order payload
     const orderPayload = {
       intent: "CAPTURE",
       purchase_units: [
         {
+          // 追跡の要E��後で webhook / 照吁E/ 二重処琁E��止に使える
+          custom_id: `deposit:user:${user.id}:cents:${amountCents}`,
           amount: {
             currency_code: "USD",
-            value: String(amount.toFixed(2)),
+            value: amountUsd.toFixed(2),
           },
         },
       ],
@@ -68,28 +65,23 @@ export async function POST(request) {
       },
     };
 
-    console.log("📤 PayPal order payload (stringified):");
+    console.log("📤 PayPal order payload:");
     console.log(JSON.stringify(orderPayload, null, 2));
 
-    // PayPal Orderを作成
+    // 4) PayPal Orderを作�E
     const orderData = await paypalRequest("/v2/checkout/orders", {
       method: "POST",
       body: JSON.stringify(orderPayload),
     });
 
-    console.log(
-      "📥 PayPal order response:",
-      JSON.stringify(orderData, null, 2),
-    );
-
-    // PayPal取引をDBに保存（pending状態）
+    // 5) legacy DBには「PayPal取引ログ」だけ保存（残高�E v2 が正�E�E
     await sql`
       INSERT INTO paypal_transactions (
         user_id, order_id, amount, currency, status, transaction_type, raw_response
       ) VALUES (
         ${user.id},
         ${orderData.id},
-        ${amount},
+        ${amountUsd},          -- 表示用USD
         'USD',
         'CREATED',
         'deposit',
@@ -97,18 +89,17 @@ export async function POST(request) {
       )
     `;
 
-    console.log(`✅ PayPal order created successfully: ${orderData.id}`);
-
     return Response.json({
       orderId: orderData.id,
       links: orderData.links,
+      amount: amountUsd,      // UIが表示する用�E�任意！E
     });
   } catch (error) {
-    console.error("❌ Create PayPal order error:", error);
-    console.error("Error details:", error.message, error.stack);
+    console.error("❁ECreate PayPal order error:", error);
     return Response.json(
       { error: error.message || "Failed to create order" },
       { status: error.message?.includes("Unauthorized") ? 401 : 500 },
     );
   }
 }
+

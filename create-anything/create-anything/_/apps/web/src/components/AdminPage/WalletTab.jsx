@@ -62,3 +62,4 @@ export function WalletTab({ wallet, onWithdrawSuccess }) {
     </div>
   );
 }
+

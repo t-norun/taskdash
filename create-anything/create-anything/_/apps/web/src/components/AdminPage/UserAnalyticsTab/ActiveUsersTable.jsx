@@ -60,3 +60,4 @@ export function ActiveUsersTable({ users }) {
     </div>
   );
 }
+

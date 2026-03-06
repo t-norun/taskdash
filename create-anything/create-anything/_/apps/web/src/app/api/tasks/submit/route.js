@@ -1,186 +1,121 @@
-import sql from "../../utils/sql";
 import { authenticateUser } from "../../utils/auth";
+
+const V2_BASE =
+  process.env.V2_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
+  "https://api.taskdash.net";
+
+function forwardHeaders(request) {
+  const h = new Headers();
+  const auth = request.headers.get("authorization");
+  if (auth) h.set("authorization", auth);
+
+  const cookie = request.headers.get("cookie");
+  if (cookie) h.set("cookie", cookie);
+
+  const devKey = request.headers.get("x-dev-key");
+  if (devKey) h.set("x-dev-key", devKey);
+
+  h.set("content-type", "application/json");
+  return h;
+}
+
+function normalizeOutcome(v2) {
+  // v2縺ｮ霑泌唆縺御ｽ輔〒縺ゅｌ縲…reate-anything蛛ｴ縺梧ｬｲ縺励◎縺・↑譛蟆上ｒ菴懊ｋ
+  // 繧ゅ＠ v2 縺・outcome 繧定ｿ斐☆縺ｪ繧画鏡縺・
+  const outcome = v2?.outcome ?? v2?.result?.outcome ?? v2?.match?.outcome;
+  if (!outcome) return null;
+
+  // 諠ｳ螳・ WIN/LOSE/TIE/NO_PAIR 縺ｪ縺ｩ
+  const o = String(outcome).toUpperCase();
+  const result = o === "WIN" ? "win" : o === "LOSE" ? "lose" : o === "TIE" ? "tie" : "waiting";
+  return { outcome: o, result };
+}
 
 export async function POST(request) {
   try {
-    const user = await authenticateUser(request);
+    await authenticateUser(request);
 
     const { taskSetId, orderedNumbers, timeMs } = await request.json();
 
-    if (!taskSetId || !orderedNumbers || !timeMs) {
+    // create-anything縺ｮ taskSetId = v2縺ｮ attemptId 縺ｨ縺励※謇ｱ縺・ｼ域怙遏ｭ・・
+    const attemptId = taskSetId;
+
+    if (!attemptId || !Array.isArray(orderedNumbers) || !Number.isFinite(Number(timeMs))) {
+      return Response.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    // ---- v2縺ｸ霆｢騾・----
+    // v2縺ｮsubmit縺後←繧薙↑蠖｢縺ｧ繧ょ女縺代ｉ繧後ｋ繧医≧縺ｫ縲∝呵｣懊く繝ｼ繧定､・焚騾√ｋ・育┌隕悶＆繧後※繧ょｮｳ縺ｪ縺暦ｼ・
+    const body = {
+      attemptId: String(attemptId),
+      orderedNumbers,
+      timeMs: Number(timeMs),
+
+      // 莠呈鋤蛟呵｣懶ｼ・2螳溯｣・↓繧医ｊ縺代ｊ・・
+      numbers: orderedNumbers,
+      elapsedMs: Number(timeMs),
+      durationMs: Number(timeMs),
+    };
+
+    // 縺ｾ縺壹・attempts/{id}/submit縲阪ｒ隧ｦ縺呻ｼ・EST縺｣縺ｽ縺・ｽ｢・・
+    let v2res = await fetch(`${V2_BASE}/attempts/${encodeURIComponent(String(attemptId))}/submit`, {
+      method: "POST",
+      headers: forwardHeaders(request),
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+
+    // 繧ゅ＠繝ｫ繝ｼ繝医′辟｡縺・↑繧峨・attempts/submit縲阪ｂ隧ｦ縺呻ｼ医≠縺ｪ縺溘・螳溯｣・ｷｮ繧貞精蜿趣ｼ・
+    if (v2res.status === 404) {
+      v2res = await fetch(`${V2_BASE}/attempts/submit`, {
+        method: "POST",
+        headers: forwardHeaders(request),
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+    }
+
+    const data = await v2res.json().catch(() => ({}));
+
+    if (!v2res.ok || data?.ok === false) {
       return Response.json(
-        { error: "Missing required fields" },
-        { status: 400 },
+        { error: data?.error || "Failed to submit (v2)", debug: data?.debug || data },
+        { status: v2res.status || 500 },
       );
     }
 
-    // Get task set to verify correctness
-    const taskSet = await sql`SELECT * FROM task_sets WHERE id = ${taskSetId}`;
+    // v2縺悟叉譎ゅ↓ outcome 繧定ｿ斐☆蝣ｴ蜷医・諡ｾ縺｣縺ｦ霑斐☆・亥叉譎ゅ・繝・メ縺ｪ繧蔚I縺碁溘￥縺ｪ繧具ｼ・
+    const out = normalizeOutcome(data);
 
-    if (taskSet.length === 0) {
-      return Response.json({ error: "Invalid task" }, { status: 404 });
-    }
-
-    const priceUsd = parseFloat(taskSet[0].price_usd);
-
-    // Check correctness - numbers should be in descending order
-    const correctOrder = [...taskSet[0].numbers].sort((a, b) => b - a);
-    const isCorrect =
-      JSON.stringify(orderedNumbers) === JSON.stringify(correctOrder);
-
-    // Create submission
-    const submission = await sql`
-      INSERT INTO submissions (user_id, task_set_id, ordered_numbers, time_ms, is_correct)
-      VALUES (${user.id}, ${taskSetId}, ${orderedNumbers}, ${timeMs}, ${isCorrect})
-      RETURNING *
-    `;
-
-    // If incorrect, return immediately (no matching)
-    if (!isCorrect) {
+    // create-anything 莠呈鋤・嘖ubmissionId 繧定ｿ斐☆
+    // 譛遏ｭ縺ｧ縺ｯ submissionId = attemptId 縺ｧ邨ｱ荳・・heck-match蛛ｴ繧ょ酔讒倥↓縺吶ｋ・・
+    if (out) {
       return Response.json({
-        submissionId: submission[0].id,
-        isCorrect: false,
-        timeMs,
-        message: "Incorrect order. No payout.",
+        submissionId: String(attemptId),
+        isCorrect: true, // v2蛛ｴ縺ｧ蛻､螳壹☆繧九′縲…reate-anything縺ｮ繝輔Ο繝ｼ逧・↓縺ｯ縲梧署蜃ｺ螳御ｺ・阪〒繧医＞
+        timeMs: Number(timeMs),
+        status: out.outcome === "NO_PAIR" ? "waiting" : "matched",
+        result: out.result,
+        // payout/newBalance 縺ｯ check-match 縺ｧ蜿悶ｋ譁ｹ縺悟ｮ牙・・医％縺薙〒縺ｯ霑斐＆縺ｪ縺上※OK・・
       });
     }
 
-    // Use transaction with FOR UPDATE SKIP LOCKED to prevent race conditions
-    const matchResult = await sql.transaction(async (txn) => {
-      // Find an unmatched correct submission to pair with (with row-level lock)
-      const unmatchedSubmission = await txn`
-        SELECT * FROM submissions 
-        WHERE task_set_id = ${taskSetId} 
-        AND is_correct = true 
-        AND matched = false 
-        AND user_id != ${user.id}
-        AND id != ${submission[0].id}
-        ORDER BY created_at ASC
-        FOR UPDATE SKIP LOCKED
-        LIMIT 1
-      `;
-
-      if (unmatchedSubmission.length === 0) {
-        // No match yet - waiting for opponent
-        return null;
-      }
-
-      // Match found! Process the match
-      const opponent = unmatchedSubmission[0];
-      const currentSubmissionId = submission[0].id;
-
-      // Determine winner
-      let winnerId;
-      let winnerSubmissionId;
-      let loserId;
-
-      if (timeMs < opponent.time_ms) {
-        winnerId = user.id;
-        winnerSubmissionId = currentSubmissionId;
-        loserId = opponent.user_id;
-      } else if (timeMs > opponent.time_ms) {
-        winnerId = opponent.user_id;
-        winnerSubmissionId = opponent.id;
-        loserId = user.id;
-      } else {
-        // Tie - both get equal payout
-        winnerId = null;
-        winnerSubmissionId = null;
-        loserId = null;
-      }
-
-      // Create match record
-      const match = await txn`
-        INSERT INTO matches (task_set_id, submission_a_id, submission_b_id, winner_submission_id)
-        VALUES (${taskSetId}, ${currentSubmissionId}, ${opponent.id}, ${winnerSubmissionId})
-        RETURNING *
-      `;
-
-      // Mark both submissions as matched
-      await txn`
-        UPDATE submissions 
-        SET matched = true 
-        WHERE id IN (${currentSubmissionId}, ${opponent.id})
-      `;
-
-      // Process payouts
-      const winnerPayout = priceUsd * 1.8;
-      const loserPayout = priceUsd * 0.1;
-      const tiePayout = priceUsd * 0.95;
-
-      if (winnerId === null) {
-        // Tie - both get price * 0.95
-        await txn`UPDATE users SET balance = balance + ${tiePayout} WHERE id IN (${user.id}, ${opponent.user_id})`;
-        await txn`
-          INSERT INTO ledger (user_id, type, amount, note, related_id)
-          VALUES 
-            (${user.id}, 'WIN', ${tiePayout}, 'Tie payout', ${match[0].id}),
-            (${opponent.user_id}, 'WIN', ${tiePayout}, 'Tie payout', ${match[0].id})
-        `;
-      } else {
-        // Winner gets price * 1.8, loser gets price * 0.1
-        await txn`UPDATE users SET balance = balance + ${winnerPayout} WHERE id = ${winnerId}`;
-        await txn`UPDATE users SET balance = balance + ${loserPayout} WHERE id = ${loserId}`;
-
-        await txn`
-          INSERT INTO ledger (user_id, type, amount, note, related_id)
-          VALUES 
-            (${winnerId}, 'WIN', ${winnerPayout}, 'Match win', ${match[0].id}),
-            (${loserId}, 'LOSE', ${loserPayout}, 'Match loss', ${match[0].id})
-        `;
-      }
-
-      return {
-        matchId: match[0].id,
-        opponentTime: opponent.time_ms,
-        winnerId,
-        winnerPayout,
-        loserPayout,
-        tiePayout,
-      };
-    });
-
-    // If no match found, return waiting status
-    if (matchResult === null) {
-      return Response.json({
-        submissionId: submission[0].id,
-        isCorrect: true,
-        timeMs,
-        status: "waiting",
-        message: "Waiting for opponent...",
-      });
-    }
-
-    // Get updated user balance
-    const updatedUser =
-      await sql`SELECT balance FROM users WHERE id = ${user.id}`;
-
+    // 縺ｾ縺 outcome 縺檎┌縺・↑繧峨悟ｾ・ｩ溘阪→縺励※霑斐☆・・reate-anything縺ｯ check-match 繧貞娼縺乗Φ螳夲ｼ・
     return Response.json({
-      submissionId: submission[0].id,
+      submissionId: String(attemptId),
       isCorrect: true,
-      timeMs,
-      status: "matched",
-      matchId: matchResult.matchId,
-      opponentTime: matchResult.opponentTime,
-      result:
-        matchResult.winnerId === user.id
-          ? "win"
-          : matchResult.winnerId === null
-            ? "tie"
-            : "lose",
-      payout:
-        matchResult.winnerId === user.id
-          ? matchResult.winnerPayout
-          : matchResult.winnerId === null
-            ? matchResult.tiePayout
-            : matchResult.loserPayout,
-      newBalance: parseFloat(updatedUser[0].balance),
+      timeMs: Number(timeMs),
+      status: "waiting",
+      message: "Submitted. Waiting for opponent...",
     });
   } catch (error) {
     console.error("Submit task error:", error);
     return Response.json(
-      { error: error.message || "Failed to submit task" },
-      { status: error.message?.includes("Unauthorized") ? 401 : 500 },
+      { error: error?.message || "Failed to submit task" },
+      { status: error?.message?.includes("Unauthorized") ? 401 : 500 },
     );
   }
 }
+
+

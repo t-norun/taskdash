@@ -1,9 +1,8 @@
-import sql from "../../utils/sql";
 import { extractBearerToken, verifyAccessToken } from "../../utils/jwt";
 
 /**
  * Bearer認証ミドルウェア
- * すべての認証が必要なAPIで使用
+ * すべての認証が忁E��なAPIで使用
  */
 export async function authenticateUser(request) {
   console.log("🔒 Server: authenticateUser called");
@@ -13,7 +12,7 @@ export async function authenticateUser(request) {
   console.log("🔒 Server: Token preview:", token?.substring(0, 30) + "...");
 
   if (!token) {
-    console.log("❌ Server: No token provided");
+    console.log("❁EServer: No token provided");
     throw new Error("Unauthorized - No token provided");
   }
 
@@ -22,23 +21,24 @@ export async function authenticateUser(request) {
   console.log("🔒 Server: Payload:", payload);
 
   if (!payload) {
-    console.log("❌ Server: Invalid or expired token");
+    console.log("❁EServer: Invalid or expired token");
     throw new Error("Unauthorized - Invalid or expired token");
   }
 
-  // DBからユーザー情報を取得
-  const users = await sql`
-    SELECT * FROM users WHERE id = ${payload.userId}
-  `;
+  // legacy web ではDBが無ぁE�Eで、payload から擬似ユーザーを絁E��立てめE
+  // 期征E payload.userId�E�なければ payload.sub 等にフォールバック�E�E
+  const id = payload.userId ?? payload.sub ?? payload.uid ?? "dev";
+  const email = payload.email ?? `${id}@local.dev`;
 
-  console.log("🔒 Server: User found in DB:", users.length > 0);
+  const user = {
+    id,
+    email,
+    // 忁E��なら適宜足ぁE
+    // name: payload.name,
+    // roles: payload.roles,
+  };
 
-  if (users.length === 0) {
-    console.log("❌ Server: User not found in DB");
-    throw new Error("User not found");
-  }
-
-  console.log("✅ Server: User authenticated successfully:", users[0].email);
-
-  return users[0];
+  console.log("✁EServer: User authenticated (no DB):", user.email);
+  return user;
 }
+
