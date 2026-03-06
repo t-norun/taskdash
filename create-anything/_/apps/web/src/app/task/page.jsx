@@ -1,794 +1,468 @@
-﻿"use client";
+"use client";
+console.log("🚀 THIS page.jsx IS LOADED 🚀");
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { GripVertical } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GripVertical, RefreshCw, BookOpen } from "lucide-react";
+import { navigate } from "@/utils/navigation";
 
-import {
-  getMode,
-  isDemoMode,
-  getCurrent,
-  submitTask,
-  // listForfeited, // ✅ Taskでは不要
-  upsertWaiting,
-  getAttemptIdStorage,
-  saveAttemptIdStorage,
-  clearAttemptIdStorage,
-} from "@/utils/runtimeData";
+/* ===============================
+   authenticatedFetch
+================================ */
+const API_HTTP = "http://localhost:3000";
 
-import { goReal } from "@/utils/navigation";
+const authenticatedFetch = async (pathOrUrl, options = {}) => {
+  if (typeof window === "undefined") return fetch(pathOrUrl, options);
 
-/**
- * Task page（create-anything）
- * ✅ submit後は waiting画面に行かず "/" に戻す
- * ✅ waiting / forfeited / results の履歴表示は Home に集約（Taskには出さない）
- * ✅ timer は「カウントダウン後」に startedAt を確定（カウントダウン分を含めない）
- * ✅ Practiceは完了時にフィードバック表示（Correct / Try again）
- *
- * Demo CPU：
- * - submitTask(payload) に elapsedMs / priceUsd を渡す（runtimeData側でCPU結果生成に使う）
- */
+  const token = localStorage.getItem("taskdash_access_token") || "";
+  const headers = new Headers(options.headers || {});
+  if (token) headers.set("Authorization", "Bearer " + token);
 
-// -----------------------------
-// misc helpers
-// -----------------------------
-function qs(name) {
-  if (typeof window === "undefined") return null;
-  try {
-    return new URLSearchParams(window.location.search).get(name);
-  } catch {
-    return null;
-  }
+  const url =
+    typeof pathOrUrl === "string" && pathOrUrl.startsWith("/api/")
+      ? `${API_HTTP}${pathOrUrl}`
+      : pathOrUrl;
+
+  return fetch(url, { ...options, headers });
+};
+
+/* ===============================
+   helpers
+================================ */
+function toNum(v, fallback = 0) {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-const isUuid = (s) =>
-  typeof s === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    s
+const getAttemptIdFromStart = (data) =>
+  String(data?.attempt?.id || data?.attemptId || data?.id || "");
+
+const getNumbersFromStart = (data) => {
+  const nums = data?.attempt?.numbers ?? data?.numbers;
+  return Array.isArray(nums) ? nums : [];
+};
+
+const getAttemptIdFromSubmit = (data, fallbackAttemptId) =>
+  String(
+    data?.attempt?.id ||
+      data?.attemptId ||
+      data?.id ||
+      data?.attempt?.attemptId ||
+      fallbackAttemptId ||
+      ""
   );
 
-function genTenNumbers() {
-  const arr = [];
-  for (let i = 0; i < 10; i++) arr.push(Math.floor(10 + Math.random() * 990));
-  return arr;
-}
-
-function judgeDescending10(slots) {
-  for (let i = 0; i < slots.length - 1; i++) {
-    const a = Number(slots[i]);
-    const b = Number(slots[i + 1]);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-    if (a < b) return false;
-  }
-  return true;
-}
-
-function makeBoard() {
-  return { numbers: genTenNumbers(), ordered: Array(10).fill(null) };
-}
-
+/* ===============================
+   TaskPage
+================================ */
 export default function TaskPage() {
-  // -----------------------------
-  // core state
-  // -----------------------------
-  const [serverStartedAtMs, setServerStartedAtMs] = useState(null);
-  const [serverExpiresAtMs, setServerExpiresAtMs] = useState(null);
-
-  const [phase, setPhase] = useState("loading"); // loading | practice | countdown | task | submitting | error
-  const [error, setError] = useState(null);
-
-  const [task] = useState({ id: "dev-task" });
-  const [priceUsd, setPriceUsd] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
 
-  const [countdown, setCountdown] = useState(3);
-  const countdownTimerRef = useRef(null);
+  const [numbers, setNumbers] = useState([]);
+  const [orderedNumbers, setOrderedNumbers] = useState(Array(10).fill(null));
 
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const elapsedTimerRef = useRef(null);
+  const [startTime, setStartTime] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState("loading");
+  const [bootError, setBootError] = useState("");
 
-  const draggedRef = useRef(null);
+  // UI state（Balanceっぽい）
+  const [selectedPick, setSelectedPick] = useState(null);
+  const [showResetModal, setShowResetModal] = useState(false);
 
-  // task board
-  const [numbers, setNumbers] = useState(() => makeBoard().numbers);
-  const [orderedNumbers, setOrderedNumbers] = useState(() => makeBoard().ordered);
+  const startedRef = useRef(false);
+  const draggedIndexRef = useRef(null);
 
-  // practice board
-  const [practiceNumbers, setPracticeNumbers] = useState(() => makeBoard().numbers);
-  const [practiceOrdered, setPracticeOrdered] = useState(() => makeBoard().ordered);
-
-  const [practiceResult, setPracticeResult] = useState(null); // null | { ok, message }
-
-  const price = useMemo(() => qs("price"), []);
-  const qpAttemptId = useMemo(() => qs("attemptId"), []);
-
-  const attemptIdRef = useRef(null);
-
-  // ✅ Ready時に current で取った startedAt/expiresAt を一旦ここに保持
-  // countdown分を除外するため、task開始時は (preStartedAt + COUNTDOWN秒) を基準にする
-  const preStartedAtRef = useRef(null);
-  const preExpiresAtRef = useRef(null);
-
-  // -----------------------------
-  // navigation
-  // -----------------------------
-  const goHome = useCallback(() => {
-    if (typeof window !== "undefined") window.location.href = "/";
+  /* ===============================
+     price (client only)
+  ================================ */
+  const [price, setPrice] = useState(1);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = Number(new URLSearchParams(window.location.search).get("price") || "1");
+    setPrice(toNum(p, 1));
   }, []);
 
-  function currentPath() {
-    if (typeof window === "undefined") return "/";
-    return window.location.pathname + window.location.search;
-  }
+  /* ===============================
+     start task
+  ================================ */
+  const startTask = async () => {
+    setBootError("");
+    setPhase("loading");
 
-  // -----------------------------
-  // helpers
-  // -----------------------------
-  function getAttemptIdSafe() {
-    return attemptIdRef.current || getAttemptIdStorage() || null;
-  }
+    const r = await authenticatedFetch("/api/tasks/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ price }),
+    });
 
-  // -----------------------------
-  // keep refs
-  // -----------------------------
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data?.ok === false) {
+      throw new Error(data?.error || "start failed");
+    }
+
+    const newAttemptId = getAttemptIdFromStart(data);
+    const nums = getNumbersFromStart(data);
+
+    if (!newAttemptId) throw new Error("start: missing attempt.id");
+    if (nums.length !== 10) throw new Error("start: numbers missing (need 10)");
+
+    setAttemptId(newAttemptId);
+    setNumbers(nums);
+    setOrderedNumbers(Array(10).fill(null));
+    setSelectedPick(null);
+
+    setStartTime(Date.now());
+    setPhase("task");
+  };
+
   useEffect(() => {
-    attemptIdRef.current = attemptId;
-  }, [attemptId]);
+    if (startedRef.current) return;
+    startedRef.current = true;
 
-  // -----------------------------
-  // init attemptId / price
-  // -----------------------------
+    (async () => {
+      try {
+        await startTask();
+      } catch (e) {
+        const msg = e?.message ? e.message : String(e);
+        console.error("START_ERROR=", msg);
+        setBootError(msg);
+        setPhase("loading");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [price]);
+
+  /* ===============================
+     drag & drop
+  ================================ */
+  const handleDragStart = (index) => {
+    draggedIndexRef.current = index;
+  };
+
+  const handleDrop = (targetIndex) => {
+    if (draggedIndexRef.current == null) return;
+
+    const srcIdx = draggedIndexRef.current;
+    const picked = numbers[srcIdx];
+
+    if (picked == null) {
+      draggedIndexRef.current = null;
+      return;
+    }
+
+    const next = [...orderedNumbers];
+    next[targetIndex] = picked;
+    setOrderedNumbers(next);
+    setSelectedPick(null);
+
+    draggedIndexRef.current = null;
+  };
+
+  /* ===============================
+     click-to-place (数字もcreate寄せ)
+  ================================ */
+  const onPickClick = (num) => {
+    if (submitting) return;
+    setSelectedPick((prev) => (prev === num ? null : num));
+  };
+
+  const onSlotClick = (i) => {
+    if (submitting) return;
+    if (selectedPick == null) return;
+    const next = [...orderedNumbers];
+    next[i] = selectedPick;
+    setOrderedNumbers(next);
+    setSelectedPick(null);
+  };
+
+  const onReset = () => {
+    setOrderedNumbers(Array(10).fill(null));
+    setSelectedPick(null);
+    setStartTime(Date.now()); // 時間もリセット（公平）
+    setShowResetModal(false);
+  };
+
+  /* ===============================
+     auto submit
+  ================================ */
   useEffect(() => {
-    let aid = qpAttemptId || getAttemptIdStorage() || null;
-    const priceVal = price ? Number(price) : null;
+    if (phase !== "task") return;
+    if (submitting) return;
+    if (!attemptId) return;
+    if (!startTime) return;
+    if (orderedNumbers.some((n) => n == null)) return;
 
-    // URLにattemptIdがない場合は復元してreplace
-    if (typeof window !== "undefined" && !qs("attemptId") && isUuid(aid)) {
-      const params = new URLSearchParams(window.location.search);
-      params.set("attemptId", aid);
-      if (priceVal != null && Number.isFinite(priceVal)) params.set("price", String(priceVal));
-      window.history.replaceState({}, "", `${window.location.pathname}?${params}`);
-    }
+    (async () => {
+      try {
+        setSubmitting(true);
 
-    if (isUuid(aid)) {
-      setAttemptId(aid);
-      saveAttemptIdStorage(aid);
-    } else {
-      setAttemptId(null);
-      clearAttemptIdStorage();
-    }
+        const timeMs = Math.max(0, Date.now() - startTime);
+        const answer = orderedNumbers.map((n) => Number(n));
 
-    setPriceUsd(Number.isFinite(priceVal) ? priceVal : null);
-
-    // 初期化
-    setElapsedMs(0);
-    setServerStartedAtMs(null);
-    setServerExpiresAtMs(null);
-    preStartedAtRef.current = null;
-    preExpiresAtRef.current = null;
-
-    // 盤面初期化
-    {
-      const b = makeBoard();
-      setNumbers(b.numbers);
-      setOrderedNumbers(b.ordered);
-
-      const pb = makeBoard();
-      setPracticeNumbers(pb.numbers);
-      setPracticeOrdered(pb.ordered);
-      setPracticeResult(null);
-    }
-
-    setPhase("practice");
-  }, []); // intentionally once
-
-  // -----------------------------
-  // countdown（3..2..1..0）
-  // - カウントダウンは計測に含めない
-  // - Ready時に確保した startedAt を「+ countdown秒」して task の基準にする
-  // -----------------------------
-  useEffect(() => {
-    if (phase !== "countdown") {
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-      return;
-    }
-
-    const COUNTDOWN_SECONDS = 10;
-
-    setCountdown(COUNTDOWN_SECONDS);
-    const endAt = Date.now() + COUNTDOWN_SECONDS * 1000;
-
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
-
-    countdownTimerRef.current = setInterval(() => {
-      const leftMs = endAt - Date.now();
-      const leftSec = Math.max(0, Math.ceil(leftMs / 1000));
-      setCountdown(leftSec);
-
-      if (leftSec <= 0) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-
-        // ✅ countdown分を除外：基準時刻を「Ready時刻 + COUNTDOWN秒」にする
-        const base = preStartedAtRef.current != null ? Number(preStartedAtRef.current) : Date.now();
-        setServerStartedAtMs(base + COUNTDOWN_SECONDS * 1000);
-        setServerExpiresAtMs(preExpiresAtRef.current != null ? Number(preExpiresAtRef.current) : null);
-        setElapsedMs(0);
-
-        // task盤面を毎回リセット
-        const b = makeBoard();
-        setNumbers(b.numbers);
-        setOrderedNumbers(b.ordered);
-
-        setPhase("task");
-      }
-    }, 100);
-
-    return () => {
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-    };
-  }, [phase]);
-
-  // -----------------------------
-  // task開始時：elapsed タイマー起動（serverStartedAtMs を基準）
-  // -----------------------------
-  useEffect(() => {
-    if (phase !== "task") {
-      if (elapsedTimerRef.current) {
-        clearInterval(elapsedTimerRef.current);
-        elapsedTimerRef.current = null;
-      }
-      return;
-    }
-    if (serverStartedAtMs == null) return;
-
-    let cancelled = false;
-    const startedAt = Number(serverStartedAtMs);
-
-    const tick = () => {
-      const now = Date.now();
-      const ms = Math.max(0, now - startedAt);
-      if (!cancelled) setElapsedMs(ms);
-    };
-
-    tick();
-    elapsedTimerRef.current = setInterval(tick, 50);
-
-    return () => {
-      cancelled = true;
-      if (elapsedTimerRef.current) {
-        clearInterval(elapsedTimerRef.current);
-        elapsedTimerRef.current = null;
-      }
-    };
-  }, [phase, serverStartedAtMs]);
-
-  // -----------------------------
-  // drag/drop
-  // -----------------------------
-  function handleDragStart(e, index, fromPool, isPractice) {
-    draggedRef.current = { index, fromPool, isPractice };
-    try {
-      e.dataTransfer.setData("text/plain", "x");
-    } catch {}
-  }
-
-  function handleDragOver(e) {
-    e.preventDefault();
-  }
-
-  function handleDropToSlot(e, slotIndex, isPractice) {
-    e.preventDefault();
-    if (isPractice) setPracticeResult(null);
-
-    const drag = draggedRef.current;
-    if (!drag) return;
-
-    if (drag.isPractice !== isPractice) {
-      draggedRef.current = null;
-      return;
-    }
-
-    const pool = isPractice ? practiceNumbers : numbers;
-    const setPool = isPractice ? setPracticeNumbers : setNumbers;
-
-    const ordered = isPractice ? practiceOrdered : orderedNumbers;
-    const setOrdered = isPractice ? setPracticeOrdered : setOrderedNumbers;
-
-    const slots = ordered.slice();
-    const newPool = pool.slice();
-    const dstValue = slots[slotIndex];
-    let value = null;
-
-    // A) slot -> slot
-    if (!drag.fromPool) {
-      const srcIndex = drag.index;
-      if (srcIndex === slotIndex) {
-        draggedRef.current = null;
-        return;
-      }
-
-      value = slots[srcIndex];
-      if (value == null) {
-        draggedRef.current = null;
-        return;
-      }
-
-      slots[slotIndex] = value;
-      slots[srcIndex] = dstValue ?? null;
-
-      setOrdered(slots);
-      draggedRef.current = null;
-
-      if (slots.every((x) => x !== null)) {
-        if (!isPractice) {
-          submitNow(slots);
-        } else {
-          const ok = judgeDescending10(slots);
-          setPracticeResult(
-            ok
-              ? { ok: true, message: "Correct! ✅ You're ready to start the task." }
-              : { ok: false, message: "Check the order ❌ Please try again." }
-          );
-        }
-      }
-      return;
-    }
-
-    // B) pool -> slot
-    value = newPool[drag.index];
-    if (value == null) {
-      draggedRef.current = null;
-      return;
-    }
-
-    newPool[drag.index] = null;
-    slots[slotIndex] = value;
-
-    if (dstValue != null) {
-      if (newPool[drag.index] == null) {
-        newPool[drag.index] = dstValue;
-      } else {
-        const empty = newPool.findIndex((x) => x == null);
-        if (empty >= 0) newPool[empty] = dstValue;
-        else {
-          // 戻す
-          slots[slotIndex] = dstValue;
-          newPool[drag.index] = value;
-          setPool(newPool);
-          setOrdered(slots);
-          draggedRef.current = null;
-          return;
-        }
-      }
-    }
-
-    setPool(newPool);
-    setOrdered(slots);
-    draggedRef.current = null;
-
-    if (slots.every((x) => x !== null)) {
-      if (!isPractice) {
-        submitNow(slots);
-      } else {
-        const ok = judgeDescending10(slots);
-        setPracticeResult(
-          ok
-            ? { ok: true, message: "Correct! ✅ You're ready to start the task." }
-            : { ok: false, message: "Check the order ❌ Please try again." }
-        );
-      }
-    }
-  }
-
-  // -----------------------------
-  // actions
-  // -----------------------------
-  async function handleReadyForReal() {
-    const aid = getAttemptIdSafe();
-    if (!isUuid(aid)) {
-      setError("missing/invalid attemptId");
-      setPhase("error");
-      return;
-    }
-
-    setError(null);
-
-    // ✅ DEMO：サーバーに行かず Ready 時刻を確保して countdown → task
-    if (isDemoMode() || getMode() === "demo" || qs("mode") === "demo") {
-      preStartedAtRef.current = Date.now();
-      preExpiresAtRef.current = null;
-      setPracticeResult(null);
-      setPhase("countdown");
-      return;
-    }
-
-    // ✅ REAL：Ready押下時点で current を叩いて startedAt/expiresAt を確保
-    try {
-      const data = await getCurrent(aid);
-
-      if (!data || data.ok === false) {
-        throw new Error((data && data.error) || "current failed");
-      }
-
-      // hasTask があるAPIだけチェック（無いならスルー）
-      if (data && Object.prototype.hasOwnProperty.call(data, "hasTask") && data.hasTask === false) {
-        throw new Error("current: hasTask=false (attempt not found?)");
-      }
-
-      const startedAt = data.startedAt ? new Date(data.startedAt).getTime() : Date.now();
-      const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : null;
-
-      preStartedAtRef.current = startedAt;
-      preExpiresAtRef.current = expiresAt;
-
-      setPracticeResult(null);
-      setPhase("countdown");
-    } catch (e) {
-      const msg = String((e && e.message) || e);
-
-      if (
-        (e && e.code === "AUTH_REQUIRED") ||
-        msg.toLowerCase().includes("auth") ||
-        msg.toLowerCase().includes("401")
-      ) {
-        goReal(currentPath());
-        return;
-      }
-
-      setError(msg);
-      setPhase("error");
-    }
-  }
-
-  async function submitNow(finalSlots) {
-    if (phase === "submitting") return;
-
-    const aid = getAttemptIdSafe();
-    if (!isUuid(aid)) {
-      setError("missing/invalid attemptId");
-      setPhase("error");
-      return;
-    }
-
-    const ordered = finalSlots.map((x) => Number(x));
-    const stakeCents =
-      priceUsd != null && Number.isFinite(Number(priceUsd))
-        ? Math.trunc(Number(priceUsd) * 100)
-        : 0;
-
-    setPhase("submitting");
-    setError(null);
-
-    try {
-      const data = await submitTask({
-        attemptId: aid,
-        orderedNumbers: ordered,
-        taskId: (task && task.id) || "dev-task",
-        stakeCents,
-
-        // ★ Demo CPUのために渡す（runtimeData側が推定に使う）
-        priceUsd: priceUsd ?? null,
-        elapsedMs: elapsedMs,
-        timeMs: elapsedMs,
-      });
-
-      if (!data || data.ok === false) {
-        throw new Error((data && data.error) || "submit failed");
-      }
-
-      const sid = data.submissionId || data.id || null;
-      if (!isUuid(sid)) throw new Error("submit returned invalid submissionId");
-
-      // ✅ matchId が返ったなら waiting に積まない（realの即マッチ時）
-      const st = String(data.statusCompat || data.status || "").toLowerCase();
-      if (!data.matchId && st.includes("wait")) {
-        upsertWaiting({
-          submissionId: sid,
-          attemptId: aid,
-          priceUsd: priceUsd ?? null,
-          stakeCents,
-          savedAt: Date.now(),
-          status: "WAITING",
+        const r = await authenticatedFetch("/api/tasks/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attemptId,
+            orderedNumbers: answer,
+            numbers: answer,
+            timeMs,
+            elapsedMs: timeMs,
+            durationMs: timeMs,
+          }),
         });
+
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data?.ok === false) {
+          throw new Error(data?.error || "submit failed");
+        }
+
+        const idForResult = getAttemptIdFromSubmit(data, attemptId);
+        navigate(`/result/${idForResult}`);
+      } catch (e) {
+        alert(e?.message || String(e));
+      } finally {
+        setSubmitting(false);
       }
+    })();
+  }, [orderedNumbers, phase, submitting, attemptId, startTime]);
 
-      // ✅ 仕様通り：待たずにHomeへ戻す
-      goHome();
-    } catch (e) {
-      const msg = String((e && e.message) || e);
+  /* ===============================
+     derived
+  ================================ */
+  const filledCount = useMemo(
+    () => orderedNumbers.filter((n) => n != null).length,
+    [orderedNumbers]
+  );
 
-      if (
-        !isDemoMode() &&
-        ((e && e.code === "AUTH_REQUIRED") ||
-          msg.toLowerCase().includes("auth") ||
-          msg.toLowerCase().includes("401"))
-      ) {
-        goReal(currentPath());
-        return;
-      }
-
-      setError(msg);
-      setPhase("error");
-    }
-  }
-
-  // -----------------------------
-  // UI
-  // -----------------------------
-  if (phase === "loading") {
-    return <div style={{ padding: 24, fontFamily: "system-ui" }}>Loading...</div>;
-  }
-
-  if (phase === "error") {
+  /* ===============================
+     UI (Balance完全移植)
+  ================================ */
+  if (phase === "loading" && !bootError) {
     return (
-      <div style={{ padding: 24, fontFamily: "system-ui" }}>
-        <h2 style={{ marginBottom: 8 }}>Error</h2>
-        <div style={{ padding: 12, background: "#fee", border: "1px solid #f99" }}>
-          {error || "unknown error"}
-        </div>
-        <button
-          onClick={goHome}
-          style={{
-            marginTop: 16,
-            padding: "10px 14px",
-            border: "1px solid #ddd",
-            borderRadius: 8,
-          }}
-        >
-          Home
-        </button>
+      <div className="min-h-screen bg-white font-inter flex items-center justify-center">
+        <div className="text-[14px] text-[#7A7A7A]">Loading...</div>
       </div>
     );
   }
 
-  if (phase === "countdown") {
+  if (bootError) {
     return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 120, fontWeight: 800 }}>{countdown}</div>
-          <div style={{ fontSize: 24 }}>Get Ready...</div>
-        </div>
-      </div>
-    );
-  }
+      <div className="min-h-screen bg-white font-inter flex items-center justify-center p-6">
+        <div className="max-w-[720px] w-full border border-[#F1F1F1] rounded-xl p-6">
+          <div className="text-[16px] font-semibold text-[#2B2B2B] mb-2">Error</div>
+          <pre className="text-[12px] text-[#C33] whitespace-pre-wrap">{bootError}</pre>
 
-  if (phase === "practice") {
-    return (
-      <div className="min-h-screen bg-white font-inter">
-        <div className="border-b border-[#EDEDED]">
-          <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
-              <span className="text-[16px] font-semibold text-[#2B2B2B]">
-                Task Dash {priceUsd != null ? `- $${priceUsd}` : ""}
-                {isDemoMode() ? " (Demo)" : ""}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-w-[800px] mx-auto px-6 py-8">
-          {/* ✅ Tabs 제거：Practiceだけ表示 */}
-
-          <div className="bg-[#FEF3C7] border border-[#F59E0B] rounded-xl p-6 mb-6">
-            <h2 className="text-[18px] font-semibold text-[#92400E] mb-3">Task Rules</h2>
-            <ul className="space-y-2 text-[14px] text-[#78350F]">
-              <li>
-                • <strong>Goal:</strong> Arrange 10 numbers in descending order (largest → smallest)
-              </li>
-              <li>
-                • <strong>How to work:</strong> Drag numbers from the pool into all 10 slots
-              </li>
-              <li>
-                • <strong>Submission:</strong> When all slots are filled, your response is submitted automatically
-              </li>
-              <li>
-                • <strong>Evaluation:</strong> Your work is assessed based on speed and accuracy
-              </li>
-              <li>
-                <span
-                  style={{
-                    display: "inline-block",
-                    color: "#111",
-                    fontWeight: "bold",
-                    fontSize: "14px",
-                    marginRight: "6px",
-                    verticalAlign: "middle",
-                  }}
-                >
-                  ※
-                </span>
-                <span style={{ display: "inline-block" }}>
-                  Submissions are evaluated based on work quality (speed &amp; accuracy)
-                </span>
-                <span style={{ display: "block", marginLeft: "22px" }}>
-                  and compared with another participant’s submission for payout allocation.
-                </span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-white border border-[#F1F1F1] rounded-xl p-8">
-            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-2">Practice Mode</h3>
-            <p className="text-[14px] text-[#7A7A7A] mb-6">
-              Try sorting these practice numbers. This does not affect evaluation or payout.
-            </p>
-
-            <div className="mb-8">
-              <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Your Practice Answer:</div>
-
-              {practiceResult && (
-                <div
-                  className={`mb-4 rounded-lg px-4 py-3 text-[14px] font-medium ${
-                    practiceResult.ok
-                      ? "bg-[#ECFDF5] text-[#065F46] border border-[#10B981]"
-                      : "bg-[#FEF2F2] text-[#991B1B] border border-[#EF4444]"
-                  }`}
-                >
-                  {practiceResult.message}
-                </div>
-              )}
-
-              {practiceResult && !practiceResult.ok && (
-                <button
-                  onClick={() => {
-                    const b = makeBoard();
-                    setPracticeNumbers(b.numbers);
-                    setPracticeOrdered(b.ordered);
-                    setPracticeResult(null);
-                  }}
-                  className="mb-6 px-4 py-2 rounded-lg bg-[#111827] text-white text-[14px] font-semibold"
-                >
-                  Try Again
-                </button>
-              )}
-
-              <div className="grid grid-cols-5 gap-3">
-                {practiceOrdered.map((num, index) => (
-                  <div
-                    key={index}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDropToSlot(e, index, true)}
-                    className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
-                      num === null
-                        ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
-                        : "border-[#10B981] bg-[#ECFDF5] text-[#10B981] cursor-move"
-                    }`}
-                    draggable={num !== null}
-                    onDragStart={(e) => num !== null && handleDragStart(e, index, false, true)}
-                  >
-                    {num === null ? index + 1 : num}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Practice Number Pool:</div>
-              <div className="grid grid-cols-5 gap-3">
-                {practiceNumbers.map((num, index) => (
-                  <div
-                    key={index}
-                    draggable={num !== null}
-                    onDragStart={(e) => num !== null && handleDragStart(e, index, true, true)}
-                    className={`h-[80px] bg-white border-2 rounded-lg flex items-center justify-center text-[24px] font-semibold cursor-move hover:bg-[#F8FAFC] ${
-                      num === null
-                        ? "border-[#E5E5E5] text-[#C3C3C3] cursor-not-allowed"
-                        : "border-[#E5E5E5] text-[#2B2B2B] hover:border-[#10B981]"
-                    }`}
-                  >
-                    <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
-                    {num === null ? "-" : num}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-[#EDEDED]">
-              <button
-                onClick={handleReadyForReal}
-                className="w-full h-[56px] bg-[#10B981] text-white text-[16px] font-semibold rounded-lg hover:bg-[#059669]"
-              >
-                Ready for Task →
-              </button>
-            </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => navigate("/balance")}
+              className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] hover:border-[#2563FF] hover:text-[#2563FF]"
+            >
+              Back
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  setBootError("");
+                  await startTask();
+                } catch (e) {
+                  setBootError(e?.message ?? String(e));
+                }
+              }}
+              className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
+            >
+              Retry
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
-  // phase === "task" or "submitting"
+  // phase === "task"
   return (
     <div className="min-h-screen bg-white font-inter">
+      {/* Top bar (Balanceと同じ) */}
       <div className="border-b border-[#EDEDED]">
         <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
             <span className="text-[16px] font-semibold text-[#2B2B2B]">
-              Task Dash {priceUsd != null ? `- $${priceUsd}` : ""}
-              {isDemoMode() ? " (Demo)" : ""}
+              Task Dash (DEV)
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="text-[20px] font-mono font-semibold text-[#2563FF]">
-              {(elapsedMs / 1000).toFixed(2)}s
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowResetModal(true)}
+              disabled={submitting}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg hover:border-[#2563FF] disabled:opacity-50"
+            >
+              <RefreshCw size={16} />
+              Reset
+            </button>
+
+            <a
+              href="/rules"
+              className="flex items-center gap-2 px-3 py-2 border border-[#E5E5E5] rounded-lg text-[13px] font-semibold text-[#7A7A7A] hover:border-[#2563FF] hover:text-[#2563FF]"
+            >
+              <BookOpen size={16} />
+              Rules
+            </a>
           </div>
         </div>
       </div>
 
       <div className="max-w-[800px] mx-auto px-6 py-8">
-        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8">
-          <h1 className="text-[20px] font-semibold text-[#2B2B2B] mb-2">
-            Sort Numbers in Descending Order
-          </h1>
-          <p className="text-[14px] text-[#7A7A7A] mb-2">
-            Drag numbers into slots. Auto-submits when all slots are filled.
-          </p>
-
-          <div className="mb-8">
-            <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Your Answer:</div>
-            <div className="grid grid-cols-5 gap-3">
-              {orderedNumbers.map((num, index) => (
-                <div
-                  key={index}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDropToSlot(e, index, false)}
-                  className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
-                    num === null
-                      ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
-                      : "border-[#2563FF] bg-[#EFF6FF] text-[#2563FF] cursor-move"
-                  }`}
-                  draggable={num !== null && phase !== "submitting"}
-                  onDragStart={(e) => num !== null && handleDragStart(e, index, false, false)}
-                >
-                  {num === null ? index + 1 : num}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Number Pool:</div>
-            <div className="grid grid-cols-5 gap-3">
-              {numbers.map((num, index) => (
-                <div
-                  key={index}
-                  draggable={num !== null && phase !== "submitting"}
-                  onDragStart={(e) => num !== null && handleDragStart(e, index, true, false)}
-                  className={`h-[80px] bg-white border-2 rounded-lg flex items-center justify-center text-[24px] font-semibold cursor-move hover:bg-[#F8FAFC] ${
-                    num === null
-                      ? "border-[#E5E5E5] text-[#C3C3C3] cursor-not-allowed"
-                      : "border-[#E5E5E5] text-[#2B2B2B] hover:border-[#2563FF]"
-                  }`}
-                >
-                  <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
-                  {num === null ? "-" : num}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {phase === "submitting" && (
-            <div className="mt-8 pt-6 border-t border-[#EDEDED]">
-              <div className="text-center text-[16px] text-[#2563FF] font-semibold">
-                Submitting...
+        {/* Main card (Balanceと同じ) */}
+        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 mb-6">
+          <div className="flex items-start justify-between gap-6 mb-6">
+            <div className="flex-1">
+              <div className="text-[13px] text-[#7A7A7A] mb-1">Arrange Numbers</div>
+              <div className="text-[24px] font-semibold text-[#2B2B2B]">
+                Fill all 10 slots
+              </div>
+              <div className="text-[12px] text-[#7A7A7A] mt-1">
+                Price: <span className="font-semibold text-[#2B2B2B]">${toNum(price, 1)}</span>{" "}
+                · Progress:{" "}
+                <span className="font-semibold text-[#2B2B2B]">
+                  {filledCount}/10
+                </span>
+              </div>
+              <div className="text-[12px] text-[#7A7A7A] mt-1">
+                attemptId:{" "}
+                <span className="font-mono text-[#2B2B2B]">{attemptId}</span>
               </div>
             </div>
-          )}
+
+            {/* 状態表示（Balanceのトーン） */}
+            <div className="text-right">
+              {submitting ? (
+                <div className="text-[13px] font-semibold text-[#2563FF]">
+                  Submitting...
+                </div>
+              ) : selectedPick != null ? (
+                <div className="text-[13px] font-semibold text-[#10B981]">
+                  Selected: {selectedPick}
+                </div>
+              ) : (
+                <div className="text-[13px] text-[#7A7A7A]">
+                  Click a number, then click a slot
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Slots（Balanceのボタン規格で再現） */}
+          <div className="grid grid-cols-5 gap-2 mb-6">
+            {orderedNumbers.map((num, i) => {
+              const has = num != null;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onSlotClick(i)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDrop(i)}
+                  disabled={submitting}
+                  className={`h-[60px] rounded-lg text-[18px] font-semibold transition-all relative border-2 ${
+                    has
+                      ? "bg-white text-[#2B2B2B] border-[#2563FF]"
+                      : selectedPick != null
+                      ? "bg-[#EFF6FF] text-[#2B2B2B] border-[#2563FF] hover:bg-[#E8F0FF]"
+                      : "bg-white text-[#2B2B2B] border-[#E5E5E5] hover:border-[#2563FF]"
+                  } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
+                >
+                  {has ? num : i + 1}
+                  {!has && (
+                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#9B9B9B] rounded-full flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-white">{i + 1}</span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Picks（価格ボタンの見た目で完全一致方向） */}
+          <div className="mb-3">
+            <div className="text-[14px] font-medium text-[#2B2B2B] mb-3">
+              Numbers
+            </div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {numbers.map((num, i) => {
+                const active = selectedPick === num;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    draggable={!submitting}
+                    onDragStart={() => handleDragStart(i)}
+                    onClick={() => onPickClick(num)}
+                    disabled={submitting}
+                    className={`h-[60px] rounded-lg text-[18px] font-semibold transition-all relative border-2 ${
+                      active
+                        ? "bg-[#2563FF] text-white border-2 border-[#2563FF]"
+                        : "bg-white text-[#2B2B2B] border-2 border-[#E5E5E5] hover:border-[#2563FF]"
+                    } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <GripVertical size={14} className={active ? "opacity-80" : "opacity-50"} />
+                      {num}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-[12px] text-[#7A7A7A] mt-4">
+            Tip: Drag & drop also works. (UI is aligned to Balance page)
+          </p>
         </div>
+
+        <a
+          href="/balance"
+          className="w-full h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] flex items-center justify-center gap-2 hover:border-[#2563FF] hover:text-[#2563FF]"
+        >
+          Back to Dashboard
+        </a>
       </div>
+
+      {/* Reset Modal（BalanceのAddFundsモーダル完全移植） */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">
+              Reset Task
+            </h3>
+            <p className="text-[13px] text-[#7A7A7A] mb-6">
+              This clears all slots and resets the timer.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowResetModal(false)}
+                disabled={submitting}
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={onReset}
+                disabled={submitting}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+

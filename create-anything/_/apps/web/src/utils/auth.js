@@ -1,240 +1,118 @@
-﻿/**
- * apps/web/src/utils/auth.js
- * create-anything (front)
- *
- * 目的:
- * - API_BASE は VITE_API_BASE_URL（本番）を優先。無ければ localhost:3000
- * - Demo mode のとき authenticatedFetch をブロックして「API直叩き事故」を止める
- * - Cookieセッション認証 / Bearer認証のどちらでも通るようにする
- * - 既存互換: authenticatedFetch / isAuthenticated / getUser / logout / requireAuth は残す
- * - 本番OTP: /api/auth/otp/send , /api/auth/otp/verify を使用（token返却）
+// create-anything/apps/web/src/utils/auth.js
+
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+
+/**
+ * Taskdash v2 用：userId直渡し（Bearer/JWTは使わない）
+ * - userId: localStorage "taskdash.userId"
+ * - devKey: localStorage "x-dev-key"（dev-local-123 を入れてる前提）
+ * - /api/* を API_BASE に向ける（既存create-anything互換）
  */
 
-const TOKEN_KEY = "taskdash_access_token";
-
-// ✅ 本番は .env の VITE_API_BASE_URL に寄せる（例: https://api.taskdash.net）
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(
-  /\/+$/,
-  ""
-);
-
-// runtimeData.ts と揃える
-const MODE_KEY = "taskdash_mode"; // "demo" | "real"
-const DEMO_VALUE = "demo";
-
-// debugログは明示ON時だけ
-const DEBUG_KEY = "taskdash_debug_auth"; // "1" で有効
-
-function safeGetLS(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
+export function getOrCreateUserId() {
+  let userId = localStorage.getItem("taskdash.userId");
+  if (!userId) {
+    userId = crypto.randomUUID();
+    localStorage.setItem("taskdash.userId", userId);
   }
-}
-function safeSetLS(key, val) {
-  try {
-    localStorage.setItem(key, val);
-  } catch {}
-}
-function safeRemoveLS(key) {
-  try {
-    localStorage.removeItem(key);
-  } catch {}
-}
-
-export function getApiBaseUrl() {
-  return API_BASE;
-}
-
-export function getAccessToken() {
-  return safeGetLS(TOKEN_KEY);
-}
-
-export function setAccessToken(token) {
-  if (!token) safeRemoveLS(TOKEN_KEY);
-  else safeSetLS(TOKEN_KEY, String(token));
+  return userId;
 }
 
 export function isAuthenticated() {
-  return !!getAccessToken();
+  // v2では userId があればOK（ログイン概念を捨てる）
+  return !!localStorage.getItem("taskdash.userId");
 }
 
-export function getMode() {
-  const m = safeGetLS(MODE_KEY);
-  return m === DEMO_VALUE ? DEMO_VALUE : "real";
+function toApiUrl(url) {
+  if (!url) return url;
+
+  // すでに絶対URLならそのまま
+  if (url.startsWith("http")) return url;
+
+  // create-anything内部のパスはそのまま（必要なら）
+  if (url.startsWith("/_create/")) return url;
+
+  // /api/... は API_BASE に向ける
+  if (url.startsWith("/api/")) return `${API_BASE}${url}`;
+
+  // それ以外はそのまま（相対を使ってる箇所があっても壊さない）
+  return url;
 }
 
-export function isDemoMode() {
-  return getMode() === DEMO_VALUE;
-}
+function appendUserId(url, userId) {
+  // /_create/ は userId を付けない
+  if (url.startsWith("/_create/")) return url;
 
-function isDebugOn() {
-  if (safeGetLS(DEBUG_KEY) === "1") return true;
-  try {
-    return !!window.__TASKDASH_DEBUG_AUTH__;
-  } catch {
-    return false;
-  }
-}
+  // 既に userId が付いてたらそのまま
+  if (url.includes("userId=")) return url;
 
-function toApiUrl(path) {
-  if (!path) return API_BASE;
-  if (typeof path === "string" && /^https?:\/\//i.test(path)) return path;
-
-  const p = String(path);
-  return `${API_BASE}${p.startsWith("/") ? "" : "/"}${p}`;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}userId=${encodeURIComponent(userId)}`;
 }
 
 /**
- * authenticatedFetch
- * - 通常: token があれば Authorization を付けて API_BASE へ fetch
- * - Cookieセッションでも認証できるよう credentials: "include" を常に付ける
- * - demo: 原則ブロック（UIが直で叩いてもここで止める）
- *
- * options.allowInDemo === true の時だけ demo でも通す（開発/検証用）
+ * 認証付きFetch（v2: userId + x-dev-key）
  */
 export async function authenticatedFetch(path, options = {}) {
-  const url = toApiUrl(path);
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
 
-  // ✅ Demo遮断
-  if (isDemoMode()) {
-    const allowInDemo = !!options.allowInDemo;
-    const isToApiBase = typeof url === "string" && url.startsWith(API_BASE);
-    const looksApiPath =
-      typeof path === "string" ? path.startsWith("/api/") || path.startsWith("api/") : true;
+  const token =
+    localStorage.getItem("taskdash_access_token") ||
+    localStorage.getItem("taskdash_token") ||
+    "";
 
-    if (!allowInDemo && isToApiBase && looksApiPath) {
-      const e = new Error("Demo mode: network calls are blocked (use runtimeData wrapper).");
-      e.code = "DEMO_MODE_BLOCKED";
-      e.url = url;
-      throw e;
-    }
-  }
-
-  const token = getAccessToken();
   const headers = new Headers(options.headers || {});
-
-  // tokenがある時だけ Authorization を付ける
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  if (!headers.has("Content-Type") && options.body != null) {
-    // 呼び出し側が未指定ならJSONとして扱う（FormData等は呼び出し側で上書きして）
-    headers.set("Content-Type", "application/json");
+  const finalOptions = { ...options, headers };
+
+  console.log("AUTH_FETCH url =", url);
+  console.log("AUTH_FETCH options =", finalOptions);
+
+  const res = await fetch(url, finalOptions);
+
+  // ↓ デバッグ用（壊れない・二重宣言しない・json()を邪魔しない）
+  try {
+    console.log("AUTH_FETCH status =", res.status);
+    const bodyPreview = await res.clone().text();
+    console.log("AUTH_FETCH body =", bodyPreview.slice(0, 300));
+  } catch (e) {
+    console.log("AUTH_FETCH preview failed:", String(e));
   }
 
-  if (isDebugOn()) {
-    // eslint-disable-next-line no-console
-    console.log("[AUTH] url=", url, "hasToken=", !!token, "mode=", getMode());
-  }
-
-  // options を壊さず、headers/allowInDemo だけ除去
-  const { headers: _ignored, allowInDemo: _ignored2, ...rest } = options;
-
-  return fetch(url, {
-    ...rest,
-    headers,
-    credentials: "include",
-  });
+  return res;
 }
 
 /**
- * OTP (本番仕様)
- * ✅ 送信: POST /api/auth/otp/send { email }
- * ✅ 検証: POST /api/auth/otp/verify { email, code } -> { ok:true, token }
- */
-export async function sendOtp(email) {
-  if (!email) throw new Error("email is required");
-
-  const r = await authenticatedFetch("/api/auth/otp/send", {
-    method: "POST",
-    allowInDemo: false,
-    body: JSON.stringify({ email }),
-  });
-
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data?.ok) {
-    throw new Error(data?.error || `send failed (${r.status})`);
-  }
-  return true;
-}
-
-export async function verifyOtp(email, code) {
-  if (!email) throw new Error("email is required");
-  if (!code) throw new Error("code is required");
-
-  const r = await authenticatedFetch("/api/auth/otp/verify", {
-    method: "POST",
-    allowInDemo: false,
-    body: JSON.stringify({ email, code }),
-  });
-
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data?.ok) {
-    throw new Error(data?.error || `verify failed (${r.status})`);
-  }
-
-  if (!data?.token) {
-    throw new Error("verify succeeded but token is missing (API response has no token)");
-  }
-
-  setAccessToken(data.token);
-  return data.token;
-}
-
-/**
- * 互換: getUser
- * - 旧仕様: balance が取れたら「ログインしてる」とみなす
- * - demo: 常に null（UIが “未ログイン” 扱いになるように）
+ * ユーザー情報（旧UI互換）
+ * - v2の /home?userId=... を叩いて、形だけ合わせて返す
  */
 export async function getUser() {
-  if (isDemoMode()) return null;
+  const r = await authenticatedFetch("/api/user/balance", { method: "GET" });
+  const j = await r.json();
+  if (!j?.ok) throw new Error(j?.error || "getUser failed");
 
-  try {
-    const r = await authenticatedFetch("/api/user/balance", { method: "GET" });
-    if (!r.ok) return null;
-
-    const data = await r.json().catch(() => null);
-    if (!data) return null;
-
-    return {
-      id: data.userId ?? data.id ?? null,
-      userId: data.userId ?? null,
-      level: data.level ?? 1,
-      tickets: data.tickets ?? null,
-      effectiveTickets: data.effectiveTickets ?? null,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    id: j.userId,
+    userId: j.userId,
+    balance: j.balance ?? 0,
+    reserved: j.reserved ?? 0,
+    available: j.available ?? j.balance ?? 0,
+    history: j.history ?? [],
+  };
 }
 
 /**
- * 互換: requireAuth
- * - ログインしてなければ throw
- */
-export function requireAuth() {
-  if (!isAuthenticated()) {
-    throw new Error("Not authenticated");
-  }
-}
-
-/**
- * logout
- * - 本番側のlogoutが無くても、tokenを消せばフロント的にはログアウト扱いになる
- * - 旧互換の /api/jwt/logout は「存在すれば叩く」でOK
+ * ログアウト（v2版）
+ * - JWTなど無いので userId を消すだけ
  */
 export async function logout() {
-  setAccessToken(null);
-
-  if (isDemoMode()) return;
-
-  try {
-    // 旧ルート互換：存在すればセッションも切れる
-    await authenticatedFetch("/api/jwt/logout", { method: "POST" });
-  } catch {
-    // ignore
-  }
+  localStorage.removeItem("taskdash.userId");
+  // create-anything側が/loginに飛ばす設計なら残してもいいが、
+  // 今はUIを動かすのが目的なのでリロードにする
+  window.location.href = "/";
 }

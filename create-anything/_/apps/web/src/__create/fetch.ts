@@ -1,4 +1,4 @@
-﻿const originalFetch = fetch;
+const originalFetch = fetch;
 const isBackend = () => typeof window === 'undefined';
 
 const safeStringify = (value: unknown) =>
@@ -54,21 +54,13 @@ const isSecondPartyUrl = (url: string) => {
   );
 };
 
-const API_BASE =
-  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
-  'http://localhost:3000';
-
-const withApiBase = (url: string) => {
-  if (!url) return url;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  if (url.startsWith('/api/')) return API_BASE + url;
-  return url;
-};
-
 export const fetchWithHeaders = async (
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<Response> => {
+  if (typeof window !== "undefined") {
+    window.alert("FETCH_WITH_HEADERS_HIT (web/_apps)");
+  }
   const url = getUrlFromArgs(input, init);
 
   const additionalHeaders = {
@@ -78,11 +70,6 @@ export const fetchWithHeaders = async (
   const isExternalFetch = !isFirstPartyURL(url) && !isSecondPartyUrl(url);
   // we should not add headers to requests that don't go to our own server
   // or if it's an API request
-  if (url.startsWith('/api/')) {
-    const nextUrl = withApiBase(url);
-    return originalFetch(nextUrl, init);
-  }
-
   if (isExternalFetch) {
     return originalFetch(input, init);
   }
@@ -111,7 +98,31 @@ export const fetchWithHeaders = async (
     finalInit = { ...init, headers: new Headers(init?.headers ?? {}) };
   }
 
+
   const finalHeaders = new Headers(finalInit.headers);
+  // JWTトークン自動付与
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('taskdash_access_token') : null;
+    // Content-Type自動付与
+    if (!finalHeaders.has('Content-Type') && !finalHeaders.has('content-type')) {
+      finalHeaders.set('Content-Type', 'application/json');
+    }
+    // Authorization自動付与
+    if (token && !finalHeaders.has('Authorization') && !finalHeaders.has('authorization')) {
+      finalHeaders.set('Authorization', 'Bearer ' + token);
+    }
+    // /dev/系エンドポイントには x-dev-key 付与（JWTは絶対に入れない）
+    if (url.includes('/dev/')) {
+      const devKey = typeof window !== 'undefined'
+        ? localStorage.getItem('taskdash_dev_key')
+        : null;
+      if (devKey && !finalHeaders.has('x-dev-key')) {
+        finalHeaders.set('x-dev-key', devKey);
+      }
+    }
+  } catch (e) {
+    // localStorage未定義時は何もしない
+  }
   for (const [key, value] of Object.entries(additionalHeaders)) {
     if (value) finalHeaders.set(key, value);
   }
@@ -124,6 +135,11 @@ export const fetchWithHeaders = async (
     : '';
 
   try {
+    // --- LOGGING for debug ---
+    console.log("[fetchWithHeaders] url=", `${prefix}${url}`);
+    console.log("[fetchWithHeaders] headers=", finalInit.headers);
+    console.log("[fetchWithHeaders] token=", typeof window !== 'undefined' ? localStorage.getItem("taskdash_access_token") : null);
+    // --- END LOGGING ---
     const result = await originalFetch(`${prefix}${url}`, finalInit);
     if (!result.ok) {
       postToParent(
@@ -150,4 +166,3 @@ export const fetchWithHeaders = async (
 };
 
 export default fetchWithHeaders;
-

@@ -1,4 +1,5 @@
-﻿import type { ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useEffect } from "react";
 import {
   Links,
   Meta,
@@ -9,12 +10,11 @@ import {
 } from "react-router";
 
 import "./global.css";
-
-// （sonner を使ってるなら残す。無いならこの2行を消してOK）
 import { Toaster } from "sonner";
 
-export const links = () => [];
-
+/* ================================
+   ErrorBoundary（OK・触らない）
+================================ */
 export function ErrorBoundary() {
   const error = useRouteError();
   const message =
@@ -25,23 +25,52 @@ export function ErrorBoundary() {
         : "Unknown error";
 
   return (
-    <html lang="en">
-      <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <Meta />
-        <Links />
-      </head>
-      <body style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
-        <h1 style={{ fontSize: 18, marginBottom: 8 }}>App Error</h1>
-        <pre style={{ whiteSpace: "pre-wrap" }}>{message}</pre>
-        <Scripts />
-      </body>
-    </html>
+    <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
+      <h1 style={{ fontSize: 18, marginBottom: 8 }}>App Error</h1>
+      <pre style={{ whiteSpace: "pre-wrap" }}>{message}</pre>
+    </div>
   );
 }
 
-function Layout({ children }: { children: ReactNode }) {
+/* ================================
+   Client-only 副作用隔離
+================================ */
+function ClientSideEffects() {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const API_BASE =
+      import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:3000";
+
+    const original = window.fetch.bind(window);
+
+    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+
+      if (url.startsWith("/api/")) {
+        return original(`${API_BASE}${url}`, init);
+      }
+
+      return original(input as any, init);
+    }) as any;
+
+    return () => {
+      window.fetch = original as any;
+    };
+  }, []);
+
+  return null;
+}
+
+/* ================================
+   Layout（副作用ゼロ！）
+================================ */
+export function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
@@ -49,24 +78,31 @@ function Layout({ children }: { children: ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        <link rel="icon" href="/src/__create/favicon.png" />
       </head>
       <body>
         {children}
-        {/* sonner 無いなら消してOK */}
+
         <Toaster position="bottom-right" />
+        <ClientSideEffects />
+
         <ScrollRestoration />
         <Scripts />
+
+        <script
+          src="https://kit.fontawesome.com/2c15cc0cc7.js"
+          crossOrigin="anonymous"
+          async
+        />
       </body>
     </html>
   );
 }
 
+/* ================================
+   App
+================================ */
 export default function App() {
-  return (
-    <Layout>
-      <Outlet />
-    </Layout>
-  );
+  return <Outlet />;
 }
-
 

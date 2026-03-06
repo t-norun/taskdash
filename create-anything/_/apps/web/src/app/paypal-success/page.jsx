@@ -1,171 +1,148 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { authenticatedFetch } from "@/utils/auth";
 
-// 通貨表示ユーティリティ
-export function formatUSD(cents) {
-  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
-}
-
 export default function PayPalSuccessPage() {
-  const [status, setStatus] = useState("processing"); // processing | success | error
+  const [status, setStatus] = useState("processing");
   const [message, setMessage] = useState("");
   const [amount, setAmount] = useState(0);
-  const [balance, setBalance] = useState(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token"); // PayPal token = orderId
+    console.log("🎯 PayPal Success page loaded");
+    console.log("📍 Full URL:", window.location.href);
+
+    // Get token from URL query params
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get("token");
+
+    console.log("🔑 Token from URL:", token);
+    console.log(
+      "📋 All query params:",
+      Object.fromEntries(urlParams.entries()),
+    );
 
     if (!token) {
+      console.error("❌ No token found in URL");
       setStatus("error");
-      setMessage("No token found in URL");
+      setMessage("Invalid payment link - no token found");
       return;
     }
 
-    const guardKey = `pp_capture_done:${token}`;
-
-    const fetchBalance = async () => {
-      const r2 = await authenticatedFetch("/api/user/balance", { method: "GET" });
-      const t2 = await r2.text();
-      let b = null;
-      try {
-        b = JSON.parse(t2);
-      } catch {}
-      if (!r2.ok) throw new Error(b?.error || t2 || `balance failed (${r2.status})`);
-      setBalance(b);
-      return b;
-    };
-
-    const run = async () => {
-      try {
-        // すでにこのセッションで処理済みなら capture をスキップして表示を復元
-        if (sessionStorage.getItem(guardKey) === "1") {
-          setStatus("success");
-          setMessage("Already processed (session).");
-
-          // 保存済み金額を復元（過去確認用）
-          const saved = Number(sessionStorage.getItem(`pp_amount_${token}`) || 0);
-          setAmount(saved);
-
-          await fetchBalance();
-          return;
-        }
-
-        // capture
-        const r = await authenticatedFetch("/api/paypal/capture-order", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId: token }),
-        });
-
-        const t = await r.text();
-        let j = null;
-        try {
-          j = JSON.parse(t);
-        } catch {}
-
-        if (!r.ok) throw new Error(j?.error || t || `capture failed (${r.status})`);
-
-        // 金額計算: captured.value → amount → deposit.units/100
-        const capturedAmount =
-          Number(j?.captured?.value ?? j?.amount ?? 0) ||
-          Number(j?.deposit?.units ?? 0) / 100;
-
-        setStatus("success");
-        setAmount(capturedAmount);
-
-        // alreadyApplied の場所は j.deposit.alreadyApplied のはずなので両対応
-        const already =
-          Boolean(j?.deposit?.alreadyApplied ?? j?.alreadyApplied ?? false);
-
-        setMessage(
-          already
-            ? "Already applied."
-            : `+$${capturedAmount.toFixed(2)} added.`
-        );
-
-        // 今回の入金額を保存（過去確認用）
-        sessionStorage.setItem(`pp_amount_${token}`, String(capturedAmount));
-        sessionStorage.setItem(guardKey, "1");
-
-        // 残高即更新
-        await fetchBalance();
-
-        // 成功時は1.2秒後にトップへ戻る
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 1200);
-      } catch (e) {
-        setStatus("error");
-        setMessage(e instanceof Error ? e.message : String(e));
-      }
-    };
-
-    run();
+    console.log(`✅ Token found: ${token}, starting capture...`);
+    capturePayment(token);
   }, []);
 
+  const capturePayment = async (orderId) => {
+    try {
+      console.log(`💵 Calling capture-order API with orderId: ${orderId}`);
+
+      const response = await authenticatedFetch("/api/paypal/capture-order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ orderId }),
+      });
+
+      console.log(`📊 Capture API response status: ${response.status}`);
+
+      const data = await response.json();
+      console.log("📦 Capture API response data:", data);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to capture payment");
+      }
+
+      console.log(`✅ Capture successful! Amount: $${data.amount}`);
+      setStatus("success");
+      setAmount(data.amount);
+      setMessage(`$${data.amount.toFixed(2)} has been added to your balance!`);
+
+      // Notify parent window if opened in new tab
+      if (window.opener && !window.opener.closed) {
+        console.log("📢 Notifying parent window of payment success");
+        window.opener.postMessage(
+          {
+            type: "PAYPAL_SUCCESS",
+            amount: data.amount,
+          },
+          "*",
+        );
+      }
+
+      // Redirect to home after 3 seconds
+      setTimeout(() => {
+        console.log("➡️ Redirecting to dashboard...");
+        if (window.opener && !window.opener.closed) {
+          // If opened in new tab, close this tab and focus parent
+          window.opener.focus();
+          window.close();
+        } else {
+          // Otherwise redirect normally
+          window.location.href = "/";
+        }
+      }, 2000);
+    } catch (error) {
+      console.error("❌ Capture error:", error);
+      setStatus("error");
+      setMessage(error.message);
+    }
+  };
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-        fontFamily: "system-ui",
-      }}
-    >
-      <div
-        style={{
-          width: 420,
-          maxWidth: "100%",
-          border: "1px solid #eee",
-          borderRadius: 12,
-          padding: 20,
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: 18 }}>PayPal Result</h1>
-
-        {status === "processing" && <p style={{ marginTop: 12 }}>Processing…</p>}
-
-        {status === "success" && (
-          <div style={{ marginTop: 12 }}>
-            <p>{message}</p>
-            <p style={{ fontWeight: 700 }}>+${amount.toFixed(2)}</p>
-
-            {/* ユーザー向け残高表示 */}
-            {balance && typeof balance.balance === "number" && (
-              <p style={{ fontWeight: 700, fontSize: 20 }}>
-                Balance: {formatUSD(balance.balance)}
+    <div className="min-h-screen bg-white font-inter flex items-center justify-center p-4">
+      <div className="w-full max-w-[400px]">
+        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 text-center">
+          {status === "processing" && (
+            <>
+              <Loader2
+                size={48}
+                className="text-[#2563FF] mx-auto mb-4 animate-spin"
+              />
+              <h2 className="text-[18px] font-semibold text-[#2B2B2B] mb-2">
+                Processing Payment...
+              </h2>
+              <p className="text-[13px] text-[#7A7A7A]">
+                Please wait while we confirm your payment
               </p>
-            )}
+            </>
+          )}
 
-            {balance && (
-              <pre
-                style={{
-                  background: "#fafafa",
-                  padding: 12,
-                  borderRadius: 8,
-                  overflow: "auto",
-                }}
+          {status === "success" && (
+            <>
+              <CheckCircle size={48} className="text-[#10B981] mx-auto mb-4" />
+              <h2 className="text-[18px] font-semibold text-[#2B2B2B] mb-2">
+                Payment Successful!
+              </h2>
+              <p className="text-[13px] text-[#7A7A7A] mb-4">{message}</p>
+              <div className="text-[24px] font-bold text-[#10B981] mb-4">
+                +${amount.toFixed(2)}
+              </div>
+              <p className="text-[12px] text-[#9B9B9B]">
+                Redirecting to dashboard...
+              </p>
+            </>
+          )}
+
+          {status === "error" && (
+            <>
+              <XCircle size={48} className="text-[#EF4444] mx-auto mb-4" />
+              <h2 className="text-[18px] font-semibold text-[#2B2B2B] mb-2">
+                Payment Failed
+              </h2>
+              <p className="text-[13px] text-[#7A7A7A] mb-6">{message}</p>
+              <a
+                href="/"
+                className="inline-block w-full h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg flex items-center justify-center"
               >
-                {JSON.stringify(balance, null, 2)}
-              </pre>
-            )}
-
-            <p style={{ color: "#666", fontSize: 12 }}>Redirecting…</p>
-          </div>
-        )}
-
-        {status === "error" && (
-          <div style={{ marginTop: 12 }}>
-            <p style={{ color: "crimson" }}>{message}</p>
-            <a href="/">Back</a>
-          </div>
-        )}
+                Return to Dashboard
+              </a>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-
