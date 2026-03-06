@@ -3,7 +3,7 @@ import { authenticateUser } from "../../utils/auth";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
@@ -21,12 +21,12 @@ function forwardHeaders(request) {
 }
 
 function normalizeOutcome(v2) {
-  // v2の返却が何であれ、create-anything側が欲しそうな最小を作る
-  // もし v2 が outcome を返すなら拾う
+  // v2の返却が何であれ、create-anything側が欲しそぁE��最小を作る
+  // もし v2 ぁEoutcome を返すなら拾ぁE
   const outcome = v2?.outcome ?? v2?.result?.outcome ?? v2?.match?.outcome;
   if (!outcome) return null;
 
-  // 想定: WIN/LOSE/TIE/NO_PAIR など
+  // 想宁E WIN/LOSE/TIE/NO_PAIR など
   const o = String(outcome).toUpperCase();
   const result = o === "WIN" ? "win" : o === "LOSE" ? "lose" : o === "TIE" ? "tie" : "waiting";
   return { outcome: o, result };
@@ -38,27 +38,27 @@ export async function POST(request) {
 
     const { taskSetId, orderedNumbers, timeMs } = await request.json();
 
-    // create-anythingの taskSetId = v2の attemptId として扱う（最短）
+    // create-anythingの taskSetId = v2の attemptId として扱ぁE��最短�E�E
     const attemptId = taskSetId;
 
     if (!attemptId || !Array.isArray(orderedNumbers) || !Number.isFinite(Number(timeMs))) {
       return Response.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // ---- v2へ転送 ----
-    // v2のsubmitがどんな形でも受けられるように、候補キーを複数送る（無視されても害なし）
+    // ---- v2へ転送E----
+    // v2のsubmitがどんな形でも受けられるように、候補キーを褁E��送る�E�無視されても害なし！E
     const body = {
       attemptId: String(attemptId),
       orderedNumbers,
       timeMs: Number(timeMs),
 
-      // 互換候補（v2実装によりけり）
+      // 互換候補！E2実裁E��よりけり�E�E
       numbers: orderedNumbers,
       elapsedMs: Number(timeMs),
       durationMs: Number(timeMs),
     };
 
-    // まず「/attempts/{id}/submit」を試す（RESTっぽい形）
+    // まず、Eattempts/{id}/submit」を試す！EESTっぽぁE���E�E
     let v2res = await fetch(`${V2_BASE}/attempts/${encodeURIComponent(String(attemptId))}/submit`, {
       method: "POST",
       headers: forwardHeaders(request),
@@ -66,7 +66,7 @@ export async function POST(request) {
       cache: "no-store",
     });
 
-    // もしルートが無いなら「/attempts/submit」も試す（あなたの実装差を吸収）
+    // もしルートが無ぁE��ら、Eattempts/submit」も試す（あなた�E実裁E��を吸収！E
     if (v2res.status === 404) {
       v2res = await fetch(`${V2_BASE}/attempts/submit`, {
         method: "POST",
@@ -85,23 +85,23 @@ export async function POST(request) {
       );
     }
 
-    // v2が即時に outcome を返す場合は拾って返す（即時マッチならUIが速くなる）
+    // v2が即時に outcome を返す場合�E拾って返す�E�即時�EチE��ならUIが速くなる！E
     const out = normalizeOutcome(data);
 
-    // create-anything 互換：submissionId を返す
-    // 最短では submissionId = attemptId で統一（check-match側も同様にする）
+    // create-anything 互換�E�submissionId を返す
+    // 最短では submissionId = attemptId で統一�E�Eheck-match側も同様にする�E�E
     if (out) {
       return Response.json({
         submissionId: String(attemptId),
-        isCorrect: true, // v2側で判定するが、create-anythingのフロー的には「提出完了」でよい
+        isCorrect: true, // v2側で判定するが、create-anythingのフロー皁E��は「提出完亁E��でよい
         timeMs: Number(timeMs),
         status: out.outcome === "NO_PAIR" ? "waiting" : "matched",
         result: out.result,
-        // payout/newBalance は check-match で取る方が安全（ここでは返さなくてOK）
+        // payout/newBalance は check-match で取る方が安�E�E�ここでは返さなくてOK�E�E
       });
     }
 
-    // まだ outcome が無いなら「待機」として返す（create-anythingは check-match を叩く想定）
+    // まだ outcome が無ぁE��ら「征E��」として返す�E�Ereate-anythingは check-match を叩く想定！E
     return Response.json({
       submissionId: String(attemptId),
       isCorrect: true,
@@ -117,4 +117,5 @@ export async function POST(request) {
     );
   }
 }
+
 

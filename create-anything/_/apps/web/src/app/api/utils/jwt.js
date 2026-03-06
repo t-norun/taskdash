@@ -1,16 +1,16 @@
 import crypto from "crypto";
 
 /**
- * JWT署名・検証用のシークレットキー
- * 本番環境では環境変数から取得
+ * JWT署名�E検証用のシークレチE��キー
+ * 本番環墁E��は環墁E��数から取征E
  */
 const JWT_SECRET =
   process.env.JWT_SECRET || "taskdash-secret-key-change-in-production";
-const ACCESS_TOKEN_EXPIRY = 15 * 60; // 15分（秒単位）
-const REFRESH_TOKEN_EXPIRY = 30 * 24 * 60 * 60; // 30日（秒単位）
+const ACCESS_TOKEN_EXPIRY = 15 * 60; // 15刁E��秒単位！E
+const REFRESH_TOKEN_EXPIRY = 30 * 24 * 60 * 60; // 30日�E�秒単位！E
 
 /**
- * Base64URL エンコード
+ * Base64URL エンコーチE
  */
 function base64url(input) {
   return Buffer.from(input)
@@ -21,17 +21,17 @@ function base64url(input) {
 }
 
 /**
- * HMAC-SHA256署名を生成
+ * HMAC-SHA256署名を生�E
  */
 function sign(data, secret) {
   return crypto.createHmac("sha256", secret).update(data).digest("base64url");
 }
 
 /**
- * JWTを生成
- * @param {Object} payload - トークンに含めるデータ
- * @param {number} expiresIn - 有効期限（秒単位）
- * @returns {string} JWT文字列
+ * JWTを生戁E
+ * @param {Object} payload - ト�Eクンに含めるチE�Eタ
+ * @param {number} expiresIn - 有効期限�E�秒単位！E
+ * @returns {string} JWT斁E���E
  */
 export function generateToken(payload, expiresIn = ACCESS_TOKEN_EXPIRY) {
   const header = { alg: "HS256", typ: "JWT" };
@@ -52,8 +52,8 @@ export function generateToken(payload, expiresIn = ACCESS_TOKEN_EXPIRY) {
 
 /**
  * JWTを検証してペイロードを返す
- * @param {string} token - JWT文字列
- * @returns {Object|null} ペイロード or null（無効な場合）
+ * @param {string} token - JWT斁E���E
+ * @returns {Object|null} ペイローチEor null�E�無効な場合！E
  */
 export function verifyToken(token) {
   try {
@@ -61,7 +61,7 @@ export function verifyToken(token) {
 
     const parts = token.split(".");
     if (parts.length !== 3) {
-      console.log("❌ JWT: Invalid token format (not 3 parts)");
+      console.log("❁EJWT: Invalid token format (not 3 parts)");
       return null;
     }
 
@@ -73,42 +73,42 @@ export function verifyToken(token) {
 
     // 署名検証
     if (signature !== expectedSignature) {
-      console.log("❌ JWT: Signature mismatch");
+      console.log("❁EJWT: Signature mismatch");
       console.log("Expected:", expectedSignature.substring(0, 20) + "...");
       console.log("Received:", signature.substring(0, 20) + "...");
       return null;
     }
 
-    console.log("✅ JWT: Signature valid");
+    console.log("✁EJWT: Signature valid");
 
-    // ペイロードをデコード
+    // ペイロードをチE��ーチE
     const payload = JSON.parse(
       Buffer.from(payloadEncoded, "base64url").toString("utf-8"),
     );
 
     console.log("🔐 JWT: Payload decoded:", payload);
 
-    // 有効期限チェック
+    // 有効期限チェチE��
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp && payload.exp < now) {
-      console.log("❌ JWT: Token expired");
+      console.log("❁EJWT: Token expired");
       console.log("Current time:", now);
       console.log("Expiration:", payload.exp);
       console.log("Difference:", now - payload.exp, "seconds ago");
-      return null; // 期限切れ
+      return null; // 期限刁E��
     }
 
-    console.log("✅ JWT: Token is valid and not expired");
+    console.log("✁EJWT: Token is valid and not expired");
 
     return payload;
   } catch (error) {
-    console.error("❌ JWT verification error:", error);
+    console.error("❁EJWT verification error:", error);
     return null;
   }
 }
 
 /**
- * Access Token を生成（15分有効）
+ * Access Token を生成！E5刁E��効�E�E
  */
 export function generateAccessToken(userId, email) {
   return generateToken(
@@ -122,7 +122,7 @@ export function generateAccessToken(userId, email) {
 }
 
 /**
- * Refresh Token を生成（30日有効）
+ * Refresh Token を生成！E0日有効�E�E
  */
 export function generateRefreshToken(userId) {
   return generateToken(
@@ -135,7 +135,7 @@ export function generateRefreshToken(userId) {
 }
 
 /**
- * Authorizationヘッダーからトークンを抽出
+ * Authorizationヘッダーからト�Eクンを抽出
  */
 export function extractBearerToken(request) {
   const authHeader = request.headers.get("Authorization");
@@ -146,7 +146,7 @@ export function extractBearerToken(request) {
 }
 
 /**
- * Access Token を検証してユーザー情報を返す
+ * Access Token を検証してユーザー惁E��を返す
  * @returns {Object|null} { userId, email } or null
  */
 export function verifyAccessToken(token) {
@@ -172,8 +172,9 @@ export function verifyRefreshToken(token) {
 }
 
 /**
- * ランダムなRefresh Token IDを生成（DB保存用）
+ * ランダムなRefresh Token IDを生成！EB保存用�E�E
  */
 export function generateRefreshTokenId() {
   return crypto.randomBytes(32).toString("hex");
 }
+

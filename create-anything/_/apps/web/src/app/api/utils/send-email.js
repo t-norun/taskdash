@@ -19,3 +19,4 @@ export async function sendEmail({ to, from, subject, html, text }) {
   }
   return { id: data.id };
 }
+

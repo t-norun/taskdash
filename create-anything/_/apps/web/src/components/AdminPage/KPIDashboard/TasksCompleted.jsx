@@ -24,3 +24,4 @@ export function TasksCompleted({ summary }) {
     </div>
   );
 }
+

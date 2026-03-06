@@ -1,19 +1,19 @@
 /**
- * PayPal API認証 & リクエスト共通処理
- * Sandbox/Live切り替え対応
+ * PayPal API認証 & リクエスト�E通�E琁E
+ * Sandbox/Live刁E��替え対忁E
  */
 
 let accessTokenCache = null;
 let tokenExpiresAt = 0;
 
 /**
- * 環境に応じたPayPal認証情報を取得
+ * 環墁E��応じたPayPal認証惁E��を取征E
  */
 function getPayPalCredentials() {
   const mode = process.env.PAYPAL_MODE || "sandbox";
   const isLive = mode === "live" || mode === "production";
 
-  // 環境別の認証情報を優先（新形式）、なければ共通設定を使用
+  // 環墁E��の認証惁E��を優先（新形式）、なければ共通設定を使用
   const clientId = isLive
     ? process.env.PAYPAL_LIVE_CLIENT_ID || process.env.PAYPAL_CLIENT_ID
     : process.env.PAYPAL_SANDBOX_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
@@ -36,7 +36,7 @@ function getPayPalCredentials() {
 }
 
 /**
- * PayPal APIのベースURL取得
+ * PayPal APIのベ�EスURL取征E
  */
 function getPayPalBaseUrl() {
   const { mode } = getPayPalCredentials();
@@ -46,58 +46,58 @@ function getPayPalBaseUrl() {
 }
 
 /**
- * PayPal OAuth2アクセストークンを取得
+ * PayPal OAuth2アクセスト�Eクンを取征E
  */
 export async function getPayPalAccessToken() {
-  // キャッシュが有効ならそれを返す
+  // キャチE��ュが有効ならそれを返す
   if (accessTokenCache && Date.now() < tokenExpiresAt) {
     return accessTokenCache;
   }
 
   const { clientId, clientSecret, mode } = getPayPalCredentials();
 
-  // 🔍 診断ログ（本番環境での環境変数確認用）
-  console.log("═══════════════════════════════════════════════════");
+  // 🔍 診断ログ�E�本番環墁E��の環墁E��数確認用�E�E
+  console.log("══════════════════════════════════════════════════╁E);
   console.log("🔍 PayPal 認証診断:");
   console.log("  Mode:", mode);
   console.log("  Environment variables checked:");
   console.log(`    - PAYPAL_MODE: ${process.env.PAYPAL_MODE || "(not set)"}`);
   if (mode === "sandbox") {
     console.log(
-      `    - PAYPAL_SANDBOX_CLIENT_ID: ${process.env.PAYPAL_SANDBOX_CLIENT_ID ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_SANDBOX_CLIENT_ID: ${process.env.PAYPAL_SANDBOX_CLIENT_ID ? "✁ESET" : "❁ENOT SET"}`,
     );
     console.log(
-      `    - PAYPAL_SANDBOX_CLIENT_SECRET: ${process.env.PAYPAL_SANDBOX_CLIENT_SECRET ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_SANDBOX_CLIENT_SECRET: ${process.env.PAYPAL_SANDBOX_CLIENT_SECRET ? "✁ESET" : "❁ENOT SET"}`,
     );
     console.log(
-      `    - PAYPAL_CLIENT_ID (fallback): ${process.env.PAYPAL_CLIENT_ID ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_CLIENT_ID (fallback): ${process.env.PAYPAL_CLIENT_ID ? "✁ESET" : "❁ENOT SET"}`,
     );
     console.log(
-      `    - PAYPAL_CLIENT_SECRET (fallback): ${process.env.PAYPAL_CLIENT_SECRET ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_CLIENT_SECRET (fallback): ${process.env.PAYPAL_CLIENT_SECRET ? "✁ESET" : "❁ENOT SET"}`,
     );
   } else {
     console.log(
-      `    - PAYPAL_LIVE_CLIENT_ID: ${process.env.PAYPAL_LIVE_CLIENT_ID ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_LIVE_CLIENT_ID: ${process.env.PAYPAL_LIVE_CLIENT_ID ? "✁ESET" : "❁ENOT SET"}`,
     );
     console.log(
-      `    - PAYPAL_LIVE_CLIENT_SECRET: ${process.env.PAYPAL_LIVE_CLIENT_SECRET ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_LIVE_CLIENT_SECRET: ${process.env.PAYPAL_LIVE_CLIENT_SECRET ? "✁ESET" : "❁ENOT SET"}`,
     );
     console.log(
-      `    - PAYPAL_CLIENT_ID (fallback): ${process.env.PAYPAL_CLIENT_ID ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_CLIENT_ID (fallback): ${process.env.PAYPAL_CLIENT_ID ? "✁ESET" : "❁ENOT SET"}`,
     );
     console.log(
-      `    - PAYPAL_CLIENT_SECRET (fallback): ${process.env.PAYPAL_CLIENT_SECRET ? "✅ SET" : "❌ NOT SET"}`,
+      `    - PAYPAL_CLIENT_SECRET (fallback): ${process.env.PAYPAL_CLIENT_SECRET ? "✁ESET" : "❁ENOT SET"}`,
     );
   }
   console.log("  Final credentials:");
   console.log(
-    `    - Client ID: ${clientId ? `***${clientId.slice(-4)}` : "❌ MISSING"}`,
+    `    - Client ID: ${clientId ? `***${clientId.slice(-4)}` : "❁EMISSING"}`,
   );
   console.log(
-    `    - Client Secret: ${clientSecret ? "✅ SET (hidden)" : "❌ MISSING"}`,
+    `    - Client Secret: ${clientSecret ? "✁ESET (hidden)" : "❁EMISSING"}`,
   );
   console.log(`  Target URL: ${getPayPalBaseUrl()}/v1/oauth2/token`);
-  console.log("═══════════════════════════════════════════════════");
+  console.log("══════════════════════════════════════════════════╁E);
 
   if (!clientId || !clientSecret) {
     throw new Error(
@@ -119,7 +119,7 @@ export async function getPayPalAccessToken() {
 
   if (!response.ok) {
     const error = await response.text();
-    console.error(`❌ PayPal auth error (${mode}):`, error);
+    console.error(`❁EPayPal auth error (${mode}):`, error);
     console.error(`   URL was: ${baseUrl}/v1/oauth2/token`);
     console.error(`   Client ID used: ***${clientId.slice(-4)}`);
     throw new Error("Failed to get PayPal access token");
@@ -127,7 +127,7 @@ export async function getPayPalAccessToken() {
 
   const data = await response.json();
 
-  // アクセストークンをキャッシュ（有効期限の90%で更新）
+  // アクセスト�EクンをキャチE��ュ�E�有効期限の90%で更新�E�E
   accessTokenCache = data.access_token;
   tokenExpiresAt = Date.now() + data.expires_in * 1000 * 0.9;
 
@@ -155,7 +155,7 @@ export async function paypalRequest(endpoint, options = {}) {
     },
   });
 
-  // レスポンスの内容を取得（JSONまたはテキスト）
+  // レスポンスの冁E��を取得！ESONまた�EチE��スト！E
   const contentType = response.headers.get("content-type");
   let data;
 
@@ -168,12 +168,12 @@ export async function paypalRequest(endpoint, options = {}) {
       data = { error: text };
     }
   } catch (parseError) {
-    console.error("❌ Failed to parse PayPal response:", parseError);
+    console.error("❁EFailed to parse PayPal response:", parseError);
     data = { error: "Failed to parse response" };
   }
 
   if (!response.ok) {
-    console.error("❌ PayPal API error details:", {
+    console.error("❁EPayPal API error details:", {
       status: response.status,
       statusText: response.statusText,
       endpoint,
@@ -188,12 +188,12 @@ export async function paypalRequest(endpoint, options = {}) {
     );
   }
 
-  console.log(`✅ PayPal response (${response.status}):`, data);
+  console.log(`✁EPayPal response (${response.status}):`, data);
   return data;
 }
 
 /**
- * Webhook ID取得（署名検証用）
+ * Webhook ID取得（署名検証用�E�E
  */
 export function getWebhookId() {
   const { webhookId } = getPayPalCredentials();
@@ -201,8 +201,9 @@ export function getWebhookId() {
 }
 
 /**
- * 現在のモード取得
+ * 現在のモード取征E
  */
 export function getPayPalMode() {
   return getPayPalCredentials().mode;
 }
+

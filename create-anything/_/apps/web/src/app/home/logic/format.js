@@ -44,3 +44,4 @@ export function fmtUsd(x) {
   const n = Number(x || 0);
   return `$${n.toFixed(2)}`;
 }
+

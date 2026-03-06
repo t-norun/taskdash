@@ -3,12 +3,12 @@ import sql from "../../utils/sql";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
 
-  // legacy側のBearerは「セッション確認」で使う。v2に渡すかは状況次第だが、渡して害はない
+  // legacy側のBearerは「セチE��ョン確認」で使ぁE��v2に渡すかは状況次第だが、渡して害はなぁE
   const auth = request.headers.get("authorization");
   if (auth) h.set("authorization", auth);
 
@@ -26,9 +26,9 @@ function toNumberOrNull(x) {
   return Number.isFinite(n) ? n : null;
 }
 
-// v2のoutcomeを create-anything 期待形に寄せる
+// v2のoutcomeめEcreate-anything 期征E��に寁E��めE
 function normalizeV2Outcome(data) {
-  // ありがちな形を全部吸収する
+  // ありがちな形を�E部吸収すめE
   const o = data?.outcome ?? data?.result?.outcome ?? data?.data?.outcome ?? data?.match?.outcome;
   const outcome = o ? String(o).toUpperCase() : null;
 
@@ -72,7 +72,7 @@ export async function GET(request) {
       return Response.json({ error: "Missing submission ID" }, { status: 400 });
     }
 
-    // 1) legacyセッション確認（create-anythingの前提維持）
+    // 1) legacyセチE��ョン確認！Ereate-anythingの前提維持E��E
     const session = await sql`
       SELECT user_id FROM sessions
       WHERE token = ${token} AND expires_at > NOW()
@@ -81,16 +81,16 @@ export async function GET(request) {
       return Response.json({ error: "Invalid session" }, { status: 401 });
     }
 
-    // 2) v2へ：submissionId = attemptId として outcome を問い合わせる
+    // 2) v2へ�E�submissionId = attemptId として outcome を問ぁE��わせめE
     const attemptId = String(submissionId);
 
-    // まず REST っぽい /attempts/:id/outcome を試す
+    // まぁEREST っぽぁE/attempts/:id/outcome を試ぁE
     let v2res = await fetch(
       `${V2_BASE}/attempts/${encodeURIComponent(attemptId)}/outcome`,
       { method: "GET", headers: forwardHeaders(request), cache: "no-store" },
     );
 
-    // 無ければ /attempts/outcome?attemptId= を試す
+    // 無ければ /attempts/outcome?attemptId= を試ぁE
     if (v2res.status === 404) {
       v2res = await fetch(
         `${V2_BASE}/attempts/outcome?attemptId=${encodeURIComponent(attemptId)}`,
@@ -108,32 +108,32 @@ export async function GET(request) {
 
     const n = normalizeV2Outcome(data);
 
-    // 3) create-anything 期待形に整形
-    // outcomeが取れない or まだ未決なら waiting 扱いに倒す
+    // 3) create-anything 期征E��に整形
+    // outcomeが取れなぁEor まだ未決なめEwaiting 扱ぁE��倒す
     const outcome = n.outcome;
 
     if (!outcome || outcome === "PENDING" || outcome === "WAITING") {
       return Response.json({
         status: "waiting",
         message: "Still waiting for opponent...",
-        // waitingTime は v2が持ってないことが多いので出さない（必要ならv2側で出す）
+        // waitingTime は v2が持ってなぁE��とが多いので出さなぁE��忁E��ならv2側で出す！E
       });
     }
 
     if (outcome === "NO_PAIR" || outcome === "NO_OPPONENT") {
       // create-anythingの既存仕様に合わせて timeout を返すのが一番無難
-      // （実際には v2側で refund 済み、という意味）
+      // �E�実際には v2側で refund 済み、とぁE��意味�E�E
       return Response.json({
         status: "timeout",
         message: "Match timeout - refund processed",
       });
     }
 
-    // WIN/LOSE/TIE を result に変換
+    // WIN/LOSE/TIE めEresult に変換
     const result =
       outcome === "WIN" ? "win" : outcome === "LOSE" ? "lose" : outcome === "TIE" ? "tie" : "tie";
 
-    // payout/newBalance が v2 から取れない場合もあるので null 許容で返す（UIが耐えないなら v2側で必ず出す）
+    // payout/newBalance ぁEv2 から取れなぁE��合もあるので null 許容で返す�E�EIが耐えなぁE��めEv2側で忁E��出す！E
     return Response.json({
       status: "matched",
       result,
@@ -150,3 +150,4 @@ export async function GET(request) {
     );
   }
 }
+

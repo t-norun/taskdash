@@ -3,7 +3,7 @@ import { authenticateUser } from "../../utils/auth";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
@@ -22,7 +22,7 @@ function forwardHeaders(request) {
 }
 
 function pickCleanedCount(data) {
-  // よくある形を吸収
+  // よくある形を吸叁E
   const candidates = [
     data?.cleaned,
     data?.count,
@@ -42,15 +42,15 @@ function pickCleanedCount(data) {
 
 export async function POST(request) {
   try {
-    // create-anything 側が JWT 認証なら合わせる（現行 waiting-count もそうだった）
-    // もしここが管理者専用で認証不要にしたいなら、この行を消せばOK
+    // create-anything 側ぁEJWT 認証なら合わせる（現衁Ewaiting-count もそぁE��った！E
+    // もしここが管琁E��E��用で認証不要にしたぁE��ら、この行を消せばOK
     await authenticateUser(request);
 
-    // v2側の cleanup / pump / reconcile 系の候補
+    // v2側の cleanup / pump / reconcile 系の候裁E
     const candidates = [
-      // あなたがログで使ってた "pump" 系（Run-LoadTestで見えたやつ）
+      // あなたがログで使ってぁE"pump" 系�E�Eun-LoadTestで見えたやつ�E�E
       { url: `${V2_BASE}/dev/match/next`, method: "POST", body: {} },
-      // よくある命名
+      // よくある命吁E
       { url: `${V2_BASE}/tasks/cleanup-waiting`, method: "POST", body: {} },
       { url: `${V2_BASE}/attempts/cleanup-waiting`, method: "POST", body: {} },
       { url: `${V2_BASE}/queue/cleanup`, method: "POST", body: {} },
@@ -73,7 +73,7 @@ export async function POST(request) {
       lastNon404 = { status: res.status, data };
 
       if (!res.ok || data?.ok === false) {
-        // 404以外の失敗は打ち切ってフォールバック（UIを壊さない）
+        // 404以外�E失敗�E打ち刁E��てフォールバック�E�EIを壊さなぁE��E
         break;
       }
 
@@ -82,12 +82,12 @@ export async function POST(request) {
       return Response.json({
         message: cleaned > 0 ? `Cleaned up ${cleaned} waiting submissions` : "No submissions to cleanup",
         cleaned,
-        // デバッグしたい時だけ見る用
+        // チE��チE��したぁE��だけ見る用
         debug: data,
       });
     }
 
-    // v2に該当APIが無い or 失敗した場合でも、ここは「0」で返す（create-anything を止めない）
+    // v2に該当APIが無ぁEor 失敗した場合でも、ここ�E、E」で返す�E�Ereate-anything を止めなぁE��E
     return Response.json({
       message: "No submissions to cleanup",
       cleaned: 0,
@@ -101,4 +101,5 @@ export async function POST(request) {
     );
   }
 }
+
 

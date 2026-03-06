@@ -168,8 +168,7 @@ export default function CreateDefaultNotFoundPage({
 
         <div className="pb-20 lg:pb-[80px]">
           <p className="flex items-center text-gray-500">
-            Check out all your project's routes here ↓
-          </p>
+            Check out all your project's routes here ↁE          </p>
         </div>
 
         {siteMap ? (
@@ -214,3 +213,4 @@ export default function CreateDefaultNotFoundPage({
     </div>
   );
 }
+

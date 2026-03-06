@@ -66,9 +66,9 @@ function safeJson(x) {
 }
 
 /**
- * 重要：Webhookは「残高・台帳を動かさない」
- * - 入金は capture-order で v2へ冪等入金（captureId=transactionId）
- * - Webhookはログ/ステータス反映のみ
+ * 重要E��Webhookは「残高�E台帳を動かさなぁE��E
+ * - 入金�E capture-order で v2へ冪等�E金！EaptureId=transactionId�E�E
+ * - Webhookはログ/スチE�Eタス反映のみ
  */
 export async function POST(request) {
   try {
@@ -87,8 +87,8 @@ export async function POST(request) {
       return Response.json({ error: "Invalid event payload" }, { status: 400 });
     }
 
-    // ---- 冪等：event.id を一度しか処理しない ----
-    // paypal_webhook_events が無い場合は先にCREATEしてね
+    // ---- 冪等：event.id を一度しか処琁E��なぁE----
+    // paypal_webhook_events が無ぁE��合�E先にCREATEしてね
     const inserted = await sql`
       INSERT INTO paypal_webhook_events (id, event_type, resource_type, resource_id)
       VALUES (
@@ -102,13 +102,13 @@ export async function POST(request) {
     `;
 
     if (inserted.length === 0) {
-      // すでに処理済み
+      // すでに処琁E��み
       return Response.json({ received: true, idempotent: true });
     }
 
     console.log("PayPal webhook received:", eventType);
 
-    // ---- ステータス更新（ログ用途） ----
+    // ---- スチE�Eタス更新�E�ログ用途！E----
     switch (eventType) {
       case "CHECKOUT.ORDER.APPROVED": {
         const orderId = event.resource?.id;
@@ -127,7 +127,7 @@ export async function POST(request) {
         const captureId = event.resource?.id;
         const orderId = event.resource?.supplementary_data?.related_ids?.order_id;
 
-        // ここでは「入金しない」。capture-order が v2入金の唯一の経路。
+        // ここでは「�E金しなぁE��。capture-order ぁEv2入金�E唯一の経路、E
         if (captureId) {
           await sql`
             UPDATE paypal_transactions
@@ -154,7 +154,7 @@ export async function POST(request) {
         break;
       }
 
-      // payout 系：最短は「ログだけ」
+      // payout 系�E�最短は「ログだけ、E
       case "PAYMENT.PAYOUTS-ITEM.SUCCEEDED": {
         const payoutItemId = event.resource?.payout_item_id;
         const payoutBatchId = event.resource?.payout_batch_id;
@@ -192,8 +192,8 @@ export async function POST(request) {
       }
 
       default: {
-        // 未対応イベントも raw_response に残す（あとで調査できる）
-        // ただしどの transaction に紐づくか不明なら何もしない
+        // 未対応イベントも raw_response に残す�E�あとで調査できる�E�E
+        // ただしどの transaction に紐づくか不�Eなら何もしなぁE
         console.log("Unhandled event type:", eventType);
       }
     }
@@ -204,4 +204,5 @@ export async function POST(request) {
     return Response.json({ error: "Webhook processing failed" }, { status: 500 });
   }
 }
+
 

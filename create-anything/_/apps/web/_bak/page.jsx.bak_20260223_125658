@@ -1,0 +1,860 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { GripVertical } from "lucide-react";
+
+/**
+ * Task page: submitしたら Home で待機する前提
+ * - Taskページでは waiting UI を出さない（必ず Home に戻す）
+ * - submit 成功後に Home 用 waitingキーを保存して "/" に遷移
+ *
+ * ✅ ズル封じ（確実版）
+ * - Ready押下で POST /api/tasks/ready （課金確定：USER→ESCROW）
+ * - Ready後に未提出で離脱したら POST /api/tasks/forfeit （没収：ESCROW→PLATFORM）
+ *   ※ 離脱は普通のfetchがキャンセルされやすいので keepalive + pagehide/hidden/beforeunload を使う
+ * - Homeボタンで戻る場合も「先に forfeit」してから遷移する（これが超重要）
+ *
+ * ✅ 今回の決定打（UIが変わらない対策）
+ * - forfeit した瞬間に localStorage の「待機系キー」を全消しする
+ *   → Home が “古い pending/waiting” を復元できなくなるので、待機ループが止まる
+ */
+
+// NOTE: create側は 4000 だが API は 3000。絶対URLでも相対でも動くように apiUrl を用意。
+const API_BASE =
+  (typeof import.meta !== "undefined" &&
+    import.meta.env &&
+    (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE)) ||
+  "http://localhost:3000";
+
+function apiUrl(path) {
+  if (!path) return API_BASE || "";
+  if (typeof path === "string" && path.startsWith("http")) return path;
+  const base = API_BASE || "";
+  if (!base) return path.startsWith("/") ? path : `/${path}`;
+  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+function qs(name) {
+  if (typeof window === "undefined") return null;
+  try {
+    return new URLSearchParams(window.location.search).get(name);
+  } catch {
+    return null;
+  }
+}
+
+function safeLSGet(k) {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+function safeLSSet(k, v) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(k, String(v));
+  } catch {}
+}
+function safeLSDel(k) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(k);
+  } catch {}
+}
+
+function getToken() {
+  return (
+    safeLSGet("taskdash_access_token") ||
+    safeLSGet("accessToken") ||
+    safeLSGet("token") ||
+    ""
+  );
+}
+
+const isUuid = (s) =>
+  typeof s === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    s
+  );
+
+// localStorage keys（create側実態に合わせる）
+const LS_ATTEMPT_ID = "taskdash_v2_attemptId"; // 実際ここに入ってる
+const LS_ATTEMPT_ID_OLD = "taskdash_attemptId";
+
+// Home 側の待機キー（実体）
+const LS_WAITING = "taskdash_waiting";
+
+// Home 側互換・残骸キー（全部殺す）
+const LS_PENDING = "pendingSubmission";
+const LS_LAST_SUBMIT = "lastSubmissionId";
+const LEGACY_SUBMISSION_KEYS = [
+  "taskdash_v2_submissionId",
+  "lastSubmissionId",
+  "taskdash_submissionId",
+  "taskdash_attemptId",
+  "taskdash_v2_attemptId",
+  "taskdash_waiting",
+  "pendingSubmission",
+];
+
+// ✅ ここが超重要：待機系を全消し（Homeが復元できないようにする）
+function clearAllWaitingKeys() {
+  try {
+    // Homeの実体
+    localStorage.removeItem(LS_WAITING);
+
+    // Home互換
+    localStorage.removeItem(LS_PENDING);
+    localStorage.removeItem(LS_LAST_SUBMIT);
+
+    // 旧キー
+    for (const k of LEGACY_SUBMISSION_KEYS) {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    }
+
+    // ついでにマッチ系の残骸も（害はない）
+    localStorage.removeItem("lastMatchId");
+  } catch {}
+}
+
+// crypto.randomUUID フォールバック
+function makeUuidFallback() {
+  const s = `${Date.now().toString(16)}-${Math.random()
+    .toString(16)
+    .slice(2)}-4aaa-8aaa-${Math.random()
+    .toString(16)
+    .slice(2)
+    .padEnd(12, "0")}`.slice(0, 36);
+  return s;
+}
+function makeAttemptId() {
+  try {
+    const id = globalThis?.crypto?.randomUUID?.();
+    if (isUuid(id)) return id;
+  } catch {}
+  const f = makeUuidFallback();
+  return isUuid(f) ? f : null;
+}
+
+function genTenNumbers() {
+  const arr = [];
+  for (let i = 0; i < 10; i++) arr.push(Math.floor(10 + Math.random() * 990));
+  return arr;
+}
+
+export default function TaskPage() {
+  const [token, setToken] = useState("");
+  const [phase, setPhase] = useState("loading"); // loading | practice | countdown | task | submitting | error
+  const phaseRef = useRef("loading");
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  const [error, setError] = useState(null);
+
+  const [task] = useState({ id: "dev-task" });
+  const [priceUsd, setPriceUsd] = useState(null);
+  const [attemptId, setAttemptId] = useState(null);
+
+  const [countdown, setCountdown] = useState(3);
+
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const startedAtRef = useRef(0);
+  const timerRef = useRef(null);
+  const draggedRef = useRef(null);
+
+  const [numbers, setNumbers] = useState(() => genTenNumbers());
+  const [orderedNumbers, setOrderedNumbers] = useState(() => Array(10).fill(null));
+
+  const [practiceNumbers, setPracticeNumbers] = useState(() => genTenNumbers());
+  const [practiceOrdered, setPracticeOrdered] = useState(() => Array(10).fill(null));
+
+  const price = useMemo(() => qs("price"), []);
+  const qpAttemptId = useMemo(() => qs("attemptId"), []);
+
+  // ✅ Ready/提出フラグ（離脱没収制御）
+  const [armed, setArmed] = useState(false); // ready済み（課金済み）
+  const [submitted, setSubmitted] = useState(false); // submit済み（没収しない）
+
+  // stale closure 対策
+  const armedRef = useRef(false);
+  const submittedRef = useRef(false);
+  const attemptIdRef = useRef(null);
+  const tokenRef = useRef("");
+
+  // Homeボタン連打などの二重実行防止
+  const leavingRef = useRef(false);
+
+  // ------------------------------------------------------------
+  // authenticatedFetch（create側に taskdash.ts が無い想定なので最小実装をここに置く）
+  // - absolute URL ならそのまま
+  // - それ以外は API_BASE を前置
+  // - Authorization: Bearer を必ず付与
+  // ------------------------------------------------------------
+  async function authenticatedFetch(path, init = {}) {
+    const t = tokenRef.current || getToken();
+    const url =
+      typeof path === "string" && path.startsWith("http") ? path : apiUrl(path);
+
+    const headers = new Headers(init.headers || {});
+    if (!headers.get("authorization") && t) {
+      headers.set("authorization", "Bearer " + t);
+    }
+    return fetch(url, { ...init, headers });
+  }
+
+  // JSON POST helper（Bearerは authenticatedFetch に任せる）
+  async function postJson(path, body) {
+    const r = await authenticatedFetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await r.json().catch(() => null);
+    return { ok: r.ok, status: r.status, data };
+  }
+
+  // 初期 token
+  useEffect(() => {
+    setToken(getToken());
+  }, []);
+
+  useEffect(() => {
+    tokenRef.current = token || getToken();
+  }, [token]);
+
+  useEffect(() => {
+    armedRef.current = armed;
+  }, [armed]);
+
+  useEffect(() => {
+    submittedRef.current = submitted;
+  }, [submitted]);
+
+  useEffect(() => {
+    attemptIdRef.current = attemptId;
+  }, [attemptId]);
+
+  // 初期化（attemptId / price / waiting掃除）
+  useEffect(() => {
+    const aid =
+      qpAttemptId ||
+      safeLSGet(LS_ATTEMPT_ID) ||
+      safeLSGet(LS_ATTEMPT_ID_OLD) ||
+      null;
+
+    if (isUuid(aid)) {
+      setAttemptId(aid);
+      safeLSSet(LS_ATTEMPT_ID, aid);
+      safeLSSet(LS_ATTEMPT_ID_OLD, aid);
+    } else {
+      setAttemptId(null);
+      safeLSDel(LS_ATTEMPT_ID);
+      safeLSDel(LS_ATTEMPT_ID_OLD);
+    }
+
+    setPriceUsd(price ? Number(price) : null);
+
+    // ✅ Taskに入ったら「待機残骸」を全消し（ここが重要）
+    clearAllWaitingKeys();
+
+    // Ready/提出フラグ初期化
+    setArmed(false);
+    setSubmitted(false);
+    armedRef.current = false;
+    submittedRef.current = false;
+
+    setPhase("practice");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleDragStart(e, index, fromPool, isPractice) {
+    draggedRef.current = { index, fromPool, isPractice };
+    try {
+      e.dataTransfer.setData("text/plain", "x");
+    } catch {}
+  }
+
+  function handleDropToSlot(e, slotIndex, isPractice) {
+    e.preventDefault();
+    const drag = draggedRef.current;
+    if (!drag) return;
+    if (drag.isPractice !== isPractice) return;
+
+    if (isPractice) {
+      const pool = practiceNumbers;
+      const slots = practiceOrdered.slice();
+
+      let value = null;
+      if (drag.fromPool) value = pool[drag.index];
+      else {
+        value = slots[drag.index];
+        slots[drag.index] = null;
+      }
+      if (value == null) return;
+
+      slots[slotIndex] = value;
+
+      if (drag.fromPool) {
+        const newPool = pool.slice();
+        newPool[drag.index] = null;
+        setPracticeNumbers(newPool);
+      }
+
+      setPracticeOrdered(slots);
+      draggedRef.current = null;
+      return;
+    }
+
+    const pool = numbers;
+    const slots = orderedNumbers.slice();
+
+    let value = null;
+    if (drag.fromPool) value = pool[drag.index];
+    else {
+      value = slots[drag.index];
+      slots[drag.index] = null;
+    }
+    if (value == null) return;
+
+    slots[slotIndex] = value;
+
+    if (drag.fromPool) {
+      const newPool = pool.slice();
+      newPool[drag.index] = null;
+      setNumbers(newPool);
+    }
+
+    setOrderedNumbers(slots);
+    draggedRef.current = null;
+
+    const filled = slots.every((x) => x !== null);
+    if (filled) submitNow(slots);
+  }
+
+  // attemptId を確実に拾う（localStorage実態に合わせる）
+  function getAttemptIdSafe() {
+    return (
+      attemptIdRef.current ||
+      safeLSGet(LS_ATTEMPT_ID) ||
+      safeLSGet(LS_ATTEMPT_ID_OLD) ||
+      null
+    );
+  }
+
+  // ✅ 離脱没収（keepalive）※ブラウザ終了/戻る/リロードで「サーバに届きやすい」
+  // ✅ さらに：離脱の瞬間に “待機キー” を消して Home が復元しないようにする
+  function fireForfeit(reason) {
+    try {
+      const isArmed = !!armedRef.current;
+      const isSubmitted = !!submittedRef.current;
+      const aid = getAttemptIdSafe();
+      const t = tokenRef.current || getToken();
+
+      // 没収条件：Ready済み && 未提出 && attemptId(uuid) && tokenあり
+      if (!isArmed) return;
+      if (isSubmitted) return;
+      if (!isUuid(aid)) return;
+      if (!t) return;
+
+      // practice誤爆防止（本番系のみ）
+      const ph = String(phaseRef.current || "");
+      if (!(ph === "countdown" || ph === "task" || ph === "submitting")) return;
+
+      // ✅ ここが決定打：forfeit発火時点で待機残骸を全消し
+      clearAllWaitingKeys();
+
+      fetch(apiUrl("/api/tasks/forfeit"), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + t,
+        },
+        body: JSON.stringify({
+          submissionId: aid,
+          reason: String(reason || "unknown"),
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  }
+
+  // ✅ 「Homeボタンで戻る」＝確実に forfeit を叩いてから遷移（これが効く）
+  // ✅ さらに：finallyで待機キー全消し（成功/失敗関係なくUIを戻す）
+  async function leaveToHomeWithForfeit() {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+
+    try {
+      const isArmed = !!armedRef.current;
+      const isSubmitted = !!submittedRef.current;
+      const aid = getAttemptIdSafe();
+      const t = tokenRef.current || getToken();
+      const ph = String(phaseRef.current || "");
+
+      if (
+        isArmed &&
+        !isSubmitted &&
+        isUuid(aid) &&
+        t &&
+        (ph === "countdown" || ph === "task" || ph === "submitting")
+      ) {
+        // ✅ ここでも先に掃除（Home復元防止）
+        clearAllWaitingKeys();
+
+        await fetch(apiUrl("/api/tasks/forfeit"), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + t,
+          },
+          body: JSON.stringify({ submissionId: aid, reason: "home_button" }),
+        }).catch(() => {});
+      }
+    } finally {
+      // ✅ 成否に関係なく「待機キー全消し」→ Homeへ
+      clearAllWaitingKeys();
+      window.location.href = "/";
+    }
+  }
+
+  // ✅ 離脱イベントにフック（ブラウザ差対策）
+  // armed=false の時は何もしない（practice中は没収しない）
+  useEffect(() => {
+    if (!armed) return;
+
+    const onBeforeUnload = () => fireForfeit("beforeunload");
+    const onPageHide = () => fireForfeit("pagehide");
+    const onVis = () => {
+      try {
+        if (document.visibilityState === "hidden") fireForfeit("visibility_hidden");
+      } catch {}
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armed]);
+
+  // ✅ Ready：課金確定（USER→ESCROW）
+  async function handleReadyForReal() {
+    const existing = attemptId && isUuid(attemptId) ? attemptId : null;
+    const aid = existing || makeAttemptId();
+
+    if (!isUuid(aid)) {
+      setError("failed to generate attemptId");
+      setPhase("error");
+      return;
+    }
+
+    // 保存（離脱没収で拾えるように）
+    setAttemptId(aid);
+    safeLSSet(LS_ATTEMPT_ID, aid);
+    safeLSSet(LS_ATTEMPT_ID_OLD, aid);
+
+    const t = tokenRef.current || getToken();
+    if (!t) {
+      setError("missing token");
+      setPhase("error");
+      return;
+    }
+
+    try {
+      // ✅ Ready：課金確定
+      const rr = await postJson("/api/tasks/ready", { submissionId: aid });
+
+      if (!rr.ok || !rr.data || rr.data.ok === false) {
+        throw new Error((rr.data && rr.data.error) || `ready failed (${rr.status})`);
+      }
+
+      // Ready成功 → armed（refも同期して離脱即対応）
+      setArmed(true);
+      armedRef.current = true;
+      setSubmitted(false);
+      submittedRef.current = false;
+
+      // countdown開始
+      setPhase("countdown");
+      setCountdown(3);
+    } catch (e) {
+      setError(e && e.message ? e.message : String(e));
+      setPhase("error");
+    }
+  }
+
+  // countdown
+  useEffect(() => {
+    if (phase !== "countdown") return;
+
+    const id = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          clearInterval(id);
+          startedAtRef.current = Date.now();
+          setElapsedMs(0);
+          setPhase("task");
+          setNumbers(genTenNumbers());
+          setOrderedNumbers(Array(10).fill(null));
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [phase]);
+
+  // timer
+  useEffect(() => {
+    if (phase !== "task") return;
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - startedAtRef.current);
+    }, 50);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [phase]);
+
+  async function submitNow(finalSlots) {
+    if (phase === "submitting") return;
+
+    const t = tokenRef.current || getToken();
+    if (!t) {
+      setError("missing token");
+      setPhase("error");
+      return;
+    }
+
+    const aid = getAttemptIdSafe();
+    if (!isUuid(aid)) {
+      setError("missing/invalid attemptId");
+      setPhase("error");
+      return;
+    }
+
+    const ordered = finalSlots.map((x) => Number(x));
+    const timeMs = Math.max(0, Date.now() - startedAtRef.current);
+    const stakeCents = priceUsd != null ? Math.trunc(Number(priceUsd) * 100) : 0;
+
+    setPhase("submitting");
+    setError(null);
+
+    try {
+      const r = await authenticatedFetch("/api/tasks/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: aid,
+          orderedNumbers: ordered,
+          timeMs,
+          taskId: (task && task.id) || "dev-task",
+          stakeCents,
+        }),
+      });
+
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data || data.ok === false) {
+        throw new Error((data && data.error) || `submit failed (${r.status})`);
+      }
+
+      const sid = data.submissionId || data.id || null;
+      if (!isUuid(sid)) throw new Error("submit returned invalid submissionId");
+
+      // ✅ submit成功したら「没収しない」（refも同期）
+      setSubmitted(true);
+      submittedRef.current = true;
+      setArmed(false);
+      armedRef.current = false;
+
+      // ✅ submit成功時は「待機キー」を作り直す（古い残骸が混ざらないように）
+      clearAllWaitingKeys();
+
+      // ✅ Homeで待機させるために保存（Homeが読む実体キー）
+      try {
+        localStorage.setItem(
+          LS_WAITING,
+          JSON.stringify({
+            submissionId: sid,
+            attemptId: aid,
+            priceUsd: priceUsd ?? null,
+            savedAt: Date.now(),
+          })
+        );
+      } catch {}
+
+      // ✅ matchId即時なら参考として保存
+      if (data.matchId) {
+        try {
+          localStorage.setItem("lastMatchId", String(data.matchId));
+        } catch {}
+      }
+
+      // ✅ Taskは waiting を表示せず必ずHomeへ
+      window.location.href = "/";
+      return;
+    } catch (e) {
+      setError(e && e.message ? e.message : String(e));
+      setPhase("error");
+    }
+  }
+
+  // UI
+  if (phase === "loading") {
+    return <div style={{ padding: 24, fontFamily: "system-ui" }}>Loading…</div>;
+  }
+
+  if (phase === "error") {
+    return (
+      <div style={{ padding: 24, fontFamily: "system-ui" }}>
+        <h2 style={{ marginBottom: 8 }}>Error</h2>
+        <div style={{ padding: 12, background: "#fee", border: "1px solid #f99" }}>
+          {error || "unknown error"}
+        </div>
+
+        <div style={{ marginTop: 12, opacity: 0.7, fontSize: 12 }}>
+          debug: attemptId={attemptId || "(null)"} phase={phase} armed={String(armed)} submitted={String(submitted)}
+        </div>
+
+        {/* Homeボタン削除 */}
+      </div>
+    );
+  }
+
+  if (phase === "practice") {
+    return (
+      <div className="min-h-screen bg-white font-inter">
+        <div className="border-b border-[#EDEDED]">
+          <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
+              <span className="text-[16px] font-semibold text-[#2B2B2B]">
+                Task Dash {priceUsd != null ? `- $${priceUsd}` : ""}
+              </span>
+            </div>
+
+            {/* Homeボタン削除 */}
+          </div>
+        </div>
+
+        <div className="max-w-[800px] mx-auto px-6 py-8">
+          <div className="bg-[#FEF3C7] border border-[#F59E0B] rounded-xl p-6 mb-6">
+            <h2 className="text-[18px] font-semibold text-[#92400E] mb-3">📋 Task Rules</h2>
+            <ul className="space-y-2 text-[14px] text-[#78350F]">
+              <li>
+                • <strong>Goal:</strong> Sort 10 numbers in descending order (largest → smallest)
+              </li>
+              <li>
+                • <strong>Method:</strong> Drag numbers from the pool into all 10 slots
+              </li>
+              <li>
+                • <strong>Important:</strong> Once all slots are filled, the task auto-submits immediately
+              </li>
+              <li>
+                • <strong>No changes after:</strong> You cannot rearrange after all slots are filled
+              </li>
+              <li>
+                • <strong>Speed matters:</strong> Faster + accurate = better rewards
+              </li>
+              <li>
+                • <strong>Anti-cheat:</strong> Ready locks the stake; leaving before submit forfeits it
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-white border border-[#F1F1F1] rounded-xl p-8">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-2">Practice Here</h3>
+            <p className="text-[14px] text-[#7A7A7A] mb-6">
+              Try sorting these practice numbers. This won't affect your score.
+            </p>
+
+            <div className="mb-8">
+              <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Your Practice Answer:</div>
+              <div className="grid grid-cols-5 gap-3">
+                {practiceOrdered.map((num, index) => (
+                  <div
+                    key={index}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleDropToSlot(e, index, true)}
+                    className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
+                      num === null
+                        ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
+                        : "border-[#10B981] bg-[#ECFDF5] text-[#10B981] cursor-move"
+                    }`}
+                    draggable={num !== null}
+                    onDragStart={(e) => num !== null && handleDragStart(e, index, false, true)}
+                  >
+                    {num === null ? index + 1 : num}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Practice Number Pool:</div>
+              <div className="grid grid-cols-5 gap-3">
+                {practiceNumbers.map((num, index) => (
+                  <div
+                    key={index}
+                    draggable={num !== null}
+                    onDragStart={(e) => num !== null && handleDragStart(e, index, true, true)}
+                    className={`h-[80px] bg-white border-2 rounded-lg flex items-center justify-center text-[24px] font-semibold cursor-move hover:bg-[#F8FAFC] ${
+                      num === null
+                        ? "border-[#E5E5E5] text-[#C3C3C3] cursor-not-allowed"
+                        : "border-[#E5E5E5] text-[#2B2B2B] hover:border-[#10B981]"
+                    }`}
+                  >
+                    <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
+                    {num === null ? "-" : num}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-[#EDEDED]">
+              <button
+                onClick={handleReadyForReal}
+                className="w-full h-[56px] bg-[#10B981] text-white text-[16px] font-semibold rounded-lg hover:bg-[#059669]"
+              >
+                Ready for Real Task →
+              </button>
+              <div className="mt-2 text-[12px] opacity-60">
+                ※ Ready を押すと課金が確定します。未提出で離脱すると没収されます。
+              </div>
+            </div>
+
+            <div className="mt-4 text-[12px] opacity-60">
+              debug: attemptId={attemptId || "-"} phase={phase} armed={String(armed)} submitted={String(submitted)}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "countdown") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#2563FF] to-[#1E40AF] font-inter flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-white text-[120px] font-bold mb-6">{countdown}</div>
+          <div className="text-[24px] text-blue-100 font-medium">Get Ready...</div>
+
+          <div className="mt-4 text-[12px] opacity-70 text-blue-100">
+            debug: attemptId={attemptId || "-"} phase={phase} armed={String(armed)} submitted={String(submitted)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // task UI（phase: task or submitting）
+  return (
+    <div className="min-h-screen bg-white font-inter">
+      <div className="border-b border-[#EDEDED]">
+        <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
+            <span className="text-[16px] font-semibold text-[#2B2B2B]">
+              Task Dash {priceUsd != null ? `- $${priceUsd}` : ""}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-[20px] font-mono font-semibold text-[#2563FF]">
+              {(elapsedMs / 1000).toFixed(2)}s
+            </div>
+
+            <button
+              onClick={leaveToHomeWithForfeit}
+              className="h-[36px] px-3 rounded-lg border border-[#E5E5E5] text-[13px] font-semibold hover:bg-[#F8FAFC]"
+              title="Home"
+            >
+              Home
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-[800px] mx-auto px-6 py-8">
+        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8">
+          <h1 className="text-[20px] font-semibold text-[#2B2B2B] mb-2">
+            Sort Numbers in Descending Order
+          </h1>
+          <p className="text-[14px] text-[#7A7A7A] mb-2">
+            Drag numbers into slots. Auto-submits when all slots are filled.
+          </p>
+          <p className="text-[12px] text-[#9CA3AF] mb-8">
+            Ready済みです。未提出で離脱すると没収されます。
+          </p>
+
+          <div className="mb-8">
+            <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Your Answer:</div>
+            <div className="grid grid-cols-5 gap-3">
+              {orderedNumbers.map((num, index) => (
+                <div
+                  key={index}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => handleDropToSlot(e, index, false)}
+                  className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
+                    num === null
+                      ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
+                      : "border-[#2563FF] bg-[#EFF6FF] text-[#2563FF] cursor-move"
+                  }`}
+                  draggable={num !== null && phase !== "submitting"}
+                  onDragStart={(e) => num !== null && handleDragStart(e, index, false, false)}
+                >
+                  {num === null ? index + 1 : num}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">Number Pool:</div>
+            <div className="grid grid-cols-5 gap-3">
+              {numbers.map((num, index) => (
+                <div
+                  key={index}
+                  draggable={num !== null && phase !== "submitting"}
+                  onDragStart={(e) => num !== null && handleDragStart(e, index, true, false)}
+                  className={`h-[80px] bg-white border-2 rounded-lg flex items-center justify-center text-[24px] font-semibold cursor-move hover:bg-[#F8FAFC] ${
+                    num === null
+                      ? "border-[#E5E5E5] text-[#C3C3C3] cursor-not-allowed"
+                      : "border-[#E5E5E5] text-[#2B2B2B] hover:border-[#2563FF]"
+                  }`}
+                >
+                  <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
+                  {num === null ? "-" : num}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {phase === "submitting" && (
+            <div className="mt-8 pt-6 border-t border-[#EDEDED]">
+              <div className="text-center text-[16px] text-[#2563FF] font-semibold">
+                Submitting...
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 text-[12px] opacity-60">
+            debug: attemptId={attemptId || "-"} phase={phase} armed={String(armed)} submitted={String(submitted)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

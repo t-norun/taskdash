@@ -3,7 +3,7 @@ import { authenticateUser } from "../../utils/auth";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
@@ -25,7 +25,7 @@ function num(x) {
 }
 
 function normalizeLedgerRows(data) {
-  // v2の返却を配列に揃える（{rows:[...]}, {ledgers:[...]}, 直配列 など吸収）
+  // v2の返却を�E列に揁E��る！Erows:[...]}, {ledgers:[...]}, 直配�E など吸収！E
   const rows =
     (Array.isArray(data?.rows) && data.rows) ||
     (Array.isArray(data?.ledgers) && data.ledgers) ||
@@ -50,7 +50,7 @@ function normalizeLedgerRows(data) {
 }
 
 function normalizeAttempts(data) {
-  // attempts/list がある場合の吸収
+  // attempts/list がある場合�E吸叁E
   const rows =
     (Array.isArray(data?.attempts) && data.attempts) ||
     (Array.isArray(data?.items) && data.items) ||
@@ -82,11 +82,11 @@ export async function GET(request) {
 
     // 1) transactions = v2 ledger から
     const ledgerCandidates = [
-      // それっぽい候補を順に試す
+      // それっぽぁE��補を頁E��試ぁE
       `${V2_BASE}/me/ledger?limit=20`,
       `${V2_BASE}/ledger/me?limit=20`,
       `${V2_BASE}/ledger?userId=${encodeURIComponent(userId)}&limit=20`,
-      `${V2_BASE}/dev/ledger/by-user?userId=${encodeURIComponent(userId)}&limit=20`, // devしか無い場合の逃げ
+      `${V2_BASE}/dev/ledger/by-user?userId=${encodeURIComponent(userId)}&limit=20`, // devしか無ぁE��合�E送E��
     ];
 
     let ledgerData = null;
@@ -111,7 +111,7 @@ export async function GET(request) {
 
     const transactions = ledgerData ? normalizeLedgerRows(ledgerData).slice(0, 20) : [];
 
-    // 2) submissions = v2 attempts/list があれば作る（無ければ [] でOK）
+    // 2) submissions = v2 attempts/list があれ�E作る�E�無ければ [] でOK�E�E
     const attemptsCandidates = [
       `${V2_BASE}/me/attempts?limit=10`,
       `${V2_BASE}/attempts/me?limit=10`,
@@ -141,7 +141,7 @@ export async function GET(request) {
       submissions,
       transactions,
       debug: {
-        // デバッグが要らなくなったら消してOK
+        // チE��チE��が要らなくなったら消してOK
         v2LedgerOk: Boolean(ledgerData),
         v2AttemptsOk: Boolean(attemptsData),
         lastLedgerNon404,
@@ -155,3 +155,4 @@ export async function GET(request) {
     );
   }
 }
+

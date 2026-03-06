@@ -1,0 +1,1194 @@
+// apps/web/src/app/page.jsx (Home)
+"use client";
+
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { getQueryParam, navigate } from "@/utils/navigation";
+import { BookOpen, LogOut, Plus } from "lucide-react";
+import { authenticatedFetch, logout, getUser, isAuthenticated } from "@/utils/auth";
+
+// create UI(4000) から API(3000) を確実に叩くための固定先（authenticatedFetch 側で使う）
+const API_ORIGIN = "http://localhost:3000";
+function apiUrl(p) {
+  if (!p) return API_ORIGIN;
+  if (typeof p === "string" && p.startsWith("http")) return p;
+  return `${API_ORIGIN}${String(p).startsWith("/") ? "" : "/"}${p}`;
+}
+
+// ===== constants =====
+const PENDING_KEY = "pendingSubmission";
+const WAITING_KEY = "taskdash_waiting"; // ★実際に使われている待機キー
+const LAST_SUBMIT_KEY = "lastSubmissionId"; // 互換
+const LEGACY_SUBMISSION_KEYS = [
+  "taskdash_v2_submissionId",
+  "lastSubmissionId",
+  "taskdash_submissionId",
+];
+const PRICE_OPTIONS = [1, 5, 10, 20, 50];
+
+// cents→USD表示用ユーティリティ
+const formatUsdFromCents = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
+
+// ===== helpers =====
+function loadPendingRaw() {
+  // 優先順位:
+  // 1) taskdash_waiting（今回の実体）
+  // 2) pendingSubmission（互換）
+  try {
+    const w = localStorage.getItem(WAITING_KEY);
+    if (w) return w;
+  } catch {}
+
+  try {
+    const p = localStorage.getItem(PENDING_KEY);
+    if (p) return p;
+  } catch {}
+
+  return null;
+}
+
+/**
+ * pending は "文字列submissionId" と "JSON" の両方を許容（過去の実装差分吸収）
+ * - 文字列: "fb2e..."
+ * - JSON: {"submissionId":"...","priceUsd":10,...} や {"attemptId":"..."} 等
+ */
+function parsePending(raw) {
+  if (!raw) return null;
+
+  // まず JSON を試す
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      const sid = obj.submissionId || obj.attemptId || obj.id || null;
+      if (sid && typeof sid === "string") {
+        return {
+          submissionId: sid,
+          priceUsd: obj.priceUsd ?? null,
+          stakeCents: obj.stakeCents ?? null,
+          savedAt: obj.savedAt ?? null,
+          status: obj.status || "WAITING",
+          matchId: obj.matchId || null,
+
+          // submit画面互換（存在すれば温存）
+          attemptId: obj.attemptId ?? null,
+          orderedNumbers: obj.orderedNumbers ?? null,
+          timeMs: obj.timeMs ?? null,
+          taskId: obj.taskId ?? null,
+        };
+      }
+    }
+  } catch {
+    // raw がただの文字列UUIDの場合はここに来る
+  }
+
+  // JSONじゃない＝そのまま submissionId として扱う
+  if (typeof raw === "string" && raw.length > 0) {
+    return {
+      submissionId: raw,
+      priceUsd: null,
+      stakeCents: null,
+      savedAt: null,
+      status: "WAITING",
+      matchId: null,
+      attemptId: null,
+      orderedNumbers: null,
+      timeMs: null,
+      taskId: null,
+    };
+  }
+
+  return null;
+}
+
+function savePendingObj(p) {
+  try {
+    if (!p) return;
+    // waiting状態は taskdash_waiting に保存（submit側と揃える）
+    localStorage.setItem(WAITING_KEY, JSON.stringify(p));
+    // 互換のため pendingSubmission にも入れておく（どっち見ても動く）
+    localStorage.setItem(PENDING_KEY, JSON.stringify(p));
+  } catch {}
+}
+
+function clearPendingStorage() {
+  try {
+    localStorage.removeItem(WAITING_KEY);
+    localStorage.removeItem(PENDING_KEY);
+    localStorage.removeItem(LAST_SUBMIT_KEY);
+    for (const k of LEGACY_SUBMISSION_KEYS) localStorage.removeItem(k);
+  } catch {}
+}
+
+function pad2(n) {
+  return String(Math.max(0, Math.trunc(Number(n) || 0))).padStart(2, "0");
+}
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${pad2(r)}`;
+}
+
+// 無期限待機 + 自動バックオフ（クライアント側）
+function computeBackoffMs(elapsedMs) {
+  const e = Math.max(0, Number(elapsedMs) || 0);
+  if (e < 20_000) return 1000; // 0-20s
+  if (e < 120_000) return 2000; // 20s-2m
+  if (e < 600_000) return 5000; // 2m-10m
+  if (e < 1_800_000) return 10_000; // 10m-30m
+  return 15_000; // 30m+
+}
+
+// recent-results の中から「この submission が終わってるか」を判定
+function isSubmissionDoneInRecent(results, submissionId) {
+  if (!Array.isArray(results) || !submissionId)
+    return { done: false, status: null, matchId: null };
+
+  for (const r of results) {
+    const mySid = r?.my?.submissionId;
+    const oppSid = r?.opponent?.submissionId;
+    const matchId = r?.matchId || null;
+
+    // my側一致
+    if (mySid === submissionId) {
+      const st = r?.my?.raw?.status || null; // "SETTLED" 等
+      if (st === "SETTLED" || st === "CANCELLED")
+        return { done: true, status: st, matchId };
+      if (r?.settledAt) return { done: true, status: "SETTLED", matchId };
+      return { done: false, status: st, matchId };
+    }
+
+    // opponent側一致（念のため）
+    if (oppSid === submissionId) {
+      const st = r?.opponent?.raw?.status || null;
+      if (st === "SETTLED" || st === "CANCELLED")
+        return { done: true, status: st, matchId };
+      if (r?.settledAt) return { done: true, status: "SETTLED", matchId };
+      return { done: false, status: st, matchId };
+    }
+  }
+
+  return { done: false, status: null, matchId: null };
+}
+
+export default function HomePage() {
+  // ===== state =====
+  const [user, setUser] = useState(null);
+
+  // /api/user/balance は cents を返す前提
+  const [balance, setBalance] = useState(0);
+  const [reserved, setReserved] = useState(0);
+  const [available, setAvailable] = useState(0);
+
+  const [loading, setLoading] = useState(true);
+
+  // ★ pending 表示（Recent Results先頭に混ぜる）
+  const [pending, setPending] = useState(null);
+
+  // ★ 経過表示＆次チェックまで
+  const [pendingElapsedMs, setPendingElapsedMs] = useState(0);
+  const [nextPollInMs, setNextPollInMs] = useState(null);
+
+  const [submittingPending, setSubmittingPending] = useState(false);
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showAddFundsModal, setShowAddFundsModal] = useState(false);
+  const [addFundsAmount, setAddFundsAmount] = useState(10);
+  const [processingPayment, setProcessingPayment] = useState(false);
+
+  const [selectedPrice, setSelectedPrice] = useState(null);
+  const [waitingCounts, setWaitingCounts] = useState({});
+
+  const [paypalEmail, setPaypalEmail] = useState("");
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [processingWithdraw, setProcessingWithdraw] = useState(false);
+
+  // --- Recent Results ---
+  const [recentMatches, setRecentMatches] = useState([]);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [recentError, setRecentError] = useState(null);
+
+  // ✅ 表示と判定は available を基準に統一（「見えてる残高」がavailableだから）
+  const availableUsd = useMemo(() => Number(available || 0) / 100, [available]);
+
+  // pending poll refs
+  const pollTimerRef = useRef(null);
+  const elapsedTimerRef = useRef(null);
+  const startedAtRef = useRef(null); // pending開始時刻
+  const nextTickAtRef = useRef(null); // 次tick予定時刻（countdown表示用）
+
+  // ✅ Discard から確実に止めるための stop ref
+  const stopPendingRef = useRef(null);
+
+  // PayPalから戻ってきたtokenを自動転送
+  useEffect(() => {
+    const token = getQueryParam("token");
+    if (token) navigate(`/paypal-success?token=${encodeURIComponent(token)}`);
+  }, []);
+
+  // PRICE_OPTIONS 外が選ばれてたらリセット（念のため）
+  useEffect(() => {
+    if (selectedPrice != null && !PRICE_OPTIONS.includes(Number(selectedPrice))) {
+      setSelectedPrice(null);
+    }
+  }, [selectedPrice]);
+
+  // ===== auth check =====
+  const checkAuth = useCallback(async () => {
+    try {
+      const ok = await Promise.resolve(isAuthenticated()).catch(() => false);
+      if (!ok) return false;
+
+      const u = await Promise.resolve(getUser()).catch(() => null);
+      if (u) setUser(u);
+      return true;
+    } catch (e) {
+      console.error("checkAuth error:", e);
+      return false;
+    }
+  }, []);
+
+  // ===== data loaders =====
+  const loadData = useCallback(async () => {
+    try {
+      const r = await authenticatedFetch(apiUrl("/api/user/balance"), { method: "GET" });
+      if (!r.ok) return;
+
+      const data = await r.json().catch(() => null);
+      if (!data) return;
+
+      const b = Number(data.balance ?? 0);
+      const resv = Number(data.reserved ?? 0);
+      const avail = Number(data.available ?? b);
+
+      setBalance(b);
+      setReserved(resv);
+      setAvailable(avail);
+
+      setUser((prev) => ({
+        ...(prev || {}),
+        ...(typeof data.user === "object" && data.user ? data.user : {}),
+      }));
+    } catch (e) {
+      console.error("loadData error:", e);
+    }
+  }, []);
+
+  const loadWaitingCounts = useCallback(async () => {
+    try {
+      // あるなら有効化（無いなら放置でOK）
+      // const res = await authenticatedFetch(apiUrl("/api/tasks/waiting-count"));
+      // const data = await res.json().catch(() => null);
+      // setWaitingCounts(data?.counts ?? {});
+    } catch (e) {
+      console.error("loadWaitingCounts error:", e);
+    }
+  }, []);
+
+  const loadRecent = useCallback(async () => {
+    setRecentLoading(true);
+    setRecentError(null);
+    try {
+      const res = await authenticatedFetch(apiUrl("/api/tasks/recent-results?limit=5"), { method: "GET" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setRecentError(data?.error || `HTTP ${res.status}`);
+        setRecentMatches([]);
+        return { ok: false, results: [] };
+      }
+      if (data?.ok && Array.isArray(data.results)) {
+        setRecentMatches(data.results);
+        return { ok: true, results: data.results };
+      }
+      setRecentMatches([]);
+      return { ok: true, results: [] };
+    } catch (e) {
+      setRecentError(String((e && e.message) || e));
+      setRecentMatches([]);
+      return { ok: false, results: [] };
+    } finally {
+      setRecentLoading(false);
+    }
+  }, []);
+
+  // ✅ Homeで「必ず最新に追随」させるためのまとめ更新
+  const refreshAll = useCallback(async () => {
+    const recent = await loadRecent();
+    await loadData();
+
+    // pending があれば「もう終わってないか」を recent-results で確定させる
+    try {
+      const raw = loadPendingRaw();
+      const p = parsePending(raw);
+      const sid = p?.submissionId || pending?.submissionId || null;
+      if (!sid) return;
+
+      const chk = isSubmissionDoneInRecent(recent?.results ?? [], sid);
+      if (chk?.done) {
+        clearPendingStorage();
+        setPending(null);
+        startedAtRef.current = null;
+        nextTickAtRef.current = null;
+        setPendingElapsedMs(0);
+        setNextPollInMs(null);
+      }
+    } catch {}
+  }, [loadRecent, loadData, pending?.submissionId]);
+
+  // ===== actions =====
+  const handleLogout = useCallback(async () => {
+    await logout();
+    navigate("/");
+  }, []);
+
+  const discardPending = useCallback(() => {
+    // ✅ poll/timer を先に止める（重要）
+    try {
+      if (typeof stopPendingRef.current === "function") stopPendingRef.current();
+    } catch {}
+
+    clearPendingStorage();
+    setPending(null);
+    startedAtRef.current = null;
+    nextTickAtRef.current = null;
+    setPendingElapsedMs(0);
+    setNextPollInMs(null);
+
+    // ✅ 破棄した瞬間に表示も残高も取り直す（Homeに戻る/リロードの代替）
+    refreshAll().catch(() => {});
+  }, [refreshAll]);
+
+  // ✅ ここでは提出しない。「submit画面へ行く」だけ（既存互換維持）
+  const submitPending = useCallback(async () => {
+    const raw = loadPendingRaw();
+    const parsed = parsePending(raw);
+    if (!parsed) return;
+
+    setSubmittingPending(true);
+    try {
+      const attemptId =
+        parsed.attemptId ||
+        parsed.submissionId ||
+        localStorage.getItem("taskdash_attemptId") ||
+        localStorage.getItem("taskdash_v2_attemptId") ||
+        null;
+
+      if (!attemptId) {
+        alert("No attemptId found.");
+        return;
+      }
+
+      const payload = {
+        attemptId,
+        orderedNumbers: Array.isArray(parsed.orderedNumbers) ? parsed.orderedNumbers : [],
+        timeMs: Number.isFinite(Number(parsed.timeMs)) ? Number(parsed.timeMs) : 0,
+        taskId: parsed.taskId ?? null,
+        priceUsd: parsed.priceUsd ?? null,
+        savedAt: parsed.savedAt ?? Date.now(),
+        submissionId: parsed.submissionId ?? attemptId,
+      };
+
+      localStorage.setItem(PENDING_KEY, JSON.stringify(payload));
+      navigate("/submit");
+    } finally {
+      setSubmittingPending(false);
+    }
+  }, []);
+
+  const handleAcceptJob = useCallback(() => {
+    if (!selectedPrice) {
+      alert("Please select a price first");
+      return;
+    }
+
+    const selectedUsd = Number(selectedPrice);
+    if (availableUsd < selectedUsd) {
+      alert(`Insufficient balance. You need at least $${selectedUsd.toFixed(2)} to accept this job.`);
+      return;
+    }
+
+    setShowConfirmModal(true);
+  }, [selectedPrice, availableUsd]);
+
+  const confirmAcceptJob = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await authenticatedFetch(apiUrl("/api/tasks/accept"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceUsd: selectedPrice }),
+      });
+
+      const text = await response.text();
+      console.log("ACCEPT RAW RESPONSE:", text);
+
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {}
+
+      console.log("ACCEPT PARSED:", data);
+
+      if (!response.ok) {
+        alert("ACCEPT HTTP ERROR: " + response.status + "\n" + text);
+        return;
+      }
+
+      const aid = data?.attemptId || data?.id || null;
+      if (!aid) {
+        alert("ACCEPTにattemptIdが無い:\n" + text);
+        return;
+      }
+
+      try {
+        localStorage.setItem("taskdash_v2_attemptId", String(aid));
+        localStorage.setItem("taskdash_attemptId", String(aid)); // 互換
+        localStorage.removeItem("taskdash_v2_submissionId");
+        localStorage.removeItem("lastSubmissionId");
+      } catch {}
+
+      window.location.href = `/task?attemptId=${encodeURIComponent(String(aid))}&price=${encodeURIComponent(
+        String(selectedPrice)
+      )}`;
+    } catch (error) {
+      alert((error && error.message) || String(error));
+    } finally {
+      setShowConfirmModal(false);
+      setLoading(false);
+    }
+  }, [selectedPrice]);
+
+  const handleAddFunds = useCallback(async () => {
+    const amt = Number(addFundsAmount);
+    if (!Number.isFinite(amt) || amt < 1 || amt > 500) {
+      alert("Amount must be between $1 and $500");
+      return;
+    }
+
+    setProcessingPayment(true);
+    try {
+      const orderRes = await authenticatedFetch(apiUrl("/api/paypal/create-order"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceUsd: String(amt.toFixed(2)) }),
+      });
+
+      const orderData = await orderRes.json().catch(() => ({}));
+      if (!orderRes.ok) throw new Error(orderData.error || "Failed to create order");
+
+      const approveUrl = orderData.approveUrl || orderData.links?.find((link) => link.rel === "approve")?.href;
+      if (!approveUrl) throw new Error("PayPal approval URL not found");
+
+      setShowAddFundsModal(false);
+      window.location.assign(approveUrl);
+    } catch (error) {
+      console.error("Add funds error:", error);
+      alert(`Error: ${(error && error.message) || String(error)}`);
+    } finally {
+      setProcessingPayment(false);
+    }
+  }, [addFundsAmount]);
+
+  const handleWithdraw = useCallback(async () => {
+    const amountUsd = parseFloat(withdrawAmount);
+
+    if (!amountUsd || amountUsd <= 0) {
+      alert("Please enter a valid amount");
+      return;
+    }
+
+    const availUsd = Number(available || 0) / 100;
+    if (amountUsd > availUsd) {
+      alert(`Insufficient funds. You only have $${availUsd.toFixed(2)} available.`);
+      return;
+    }
+
+    if (!paypalEmail || !paypalEmail.includes("@")) {
+      alert("Please enter a valid PayPal email address");
+      return;
+    }
+
+    setProcessingWithdraw(true);
+    try {
+      const response = await authenticatedFetch(apiUrl("/api/paypal/payout"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amountUsd, paypalEmail }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Failed to process withdrawal");
+
+      alert(`Withdrawal request submitted! Status: ${data.status}`);
+      setShowWithdrawModal(false);
+      setWithdrawAmount("");
+      setPaypalEmail("");
+
+      await loadData();
+    } catch (error) {
+      console.error("Withdraw error:", error);
+      alert((error && error.message) || String(error));
+    } finally {
+      setProcessingWithdraw(false);
+    }
+  }, [withdrawAmount, available, paypalEmail, loadData]);
+
+  // ===========================
+  // 無期限待機 + 自動バックオフ + 経過時間表示
+  // ===========================
+  useEffect(() => {
+    const raw = loadPendingRaw();
+    const p0 = parsePending(raw);
+    const sid = p0?.submissionId || null;
+    if (!sid) return;
+
+    const startedAt = Number.isFinite(Number(p0?.savedAt)) ? Number(p0.savedAt) : Date.now();
+    startedAtRef.current = startedAt;
+
+    const first = {
+      submissionId: sid,
+      status: "WAITING",
+      matchId: p0?.matchId || null,
+      priceUsd: p0?.priceUsd ?? null,
+      stakeCents: p0?.stakeCents ?? null,
+      savedAt: startedAt,
+    };
+    setPending(first);
+    savePendingObj(first);
+
+    let cancelled = false;
+
+    const stop = () => {
+      try {
+        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      } catch {}
+      try {
+        if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+        elapsedTimerRef.current = null;
+      } catch {}
+      nextTickAtRef.current = null;
+      setNextPollInMs(null);
+    };
+
+    stopPendingRef.current = stop;
+
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    elapsedTimerRef.current = setInterval(() => {
+      const st = startedAtRef.current;
+      if (!st) return;
+      setPendingElapsedMs(Date.now() - st);
+
+      const nt = nextTickAtRef.current;
+      if (nt) setNextPollInMs(Math.max(0, nt - Date.now()));
+    }, 1000);
+
+    const scheduleNext = (serverNextPollMs) => {
+      const st = startedAtRef.current || Date.now();
+      const elapsed = Date.now() - st;
+
+      const clientNext = computeBackoffMs(elapsed);
+      const serverNext = Number(serverNextPollMs);
+
+      let nextMs = clientNext;
+      if (Number.isFinite(serverNext)) nextMs = Math.max(clientNext, serverNext);
+
+      nextMs = Math.max(800, Math.min(nextMs, 15_000));
+
+      nextTickAtRef.current = Date.now() + nextMs;
+      setNextPollInMs(nextMs);
+
+      pollTimerRef.current = setTimeout(tick, nextMs);
+    };
+
+    const hardClearAndRefresh = async () => {
+      stop();
+      clearPendingStorage();
+      setPending(null);
+      startedAtRef.current = null;
+      nextTickAtRef.current = null;
+      setPendingElapsedMs(0);
+      setNextPollInMs(null);
+
+      await refreshAll().catch(() => {});
+    };
+
+    const tick = async () => {
+      if (cancelled) return;
+
+      try {
+        const res = await authenticatedFetch(
+          apiUrl(`/api/tasks/check-match?submissionId=${encodeURIComponent(sid)}`),
+          { method: "GET" }
+        );
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          if (Math.random() < 0.25) await refreshAll().catch(() => {});
+          scheduleNext(1500);
+          return;
+        }
+
+        // ============================================================
+        // ✅ ここが今回の「唯一の修正」：forfeited を見たら終了処理
+        // - APIは status:"forfeited" / statusCompat:"forfeited" / forfeited:true の可能性
+        // - 見た瞬間にポーリング停止 & pending掃除 & Homeをプレイ可能に戻す
+        // ============================================================
+        const st = String(data?.status ?? data?.statusCompat ?? "").toLowerCase();
+        const isForfeited = data?.forfeited === true || st === "forfeited";
+        if (isForfeited) {
+          // 以後 tick を回さない（この effect 内だけ確実に止める）
+          cancelled = true;
+          await hardClearAndRefresh();
+          return;
+        }
+
+        if (data?.matchId) {
+          setPending((prev) => {
+            const next = {
+              ...(prev || {}),
+              submissionId: sid,
+              status: "MATCHED",
+              matchId: data.matchId,
+              savedAt: startedAtRef.current || Date.now(),
+            };
+            savePendingObj(next);
+            return next;
+          });
+
+          try {
+            await authenticatedFetch(apiUrl("/api/tasks/settle"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ matchId: data.matchId }),
+            }).then((r) => r.json().catch(() => ({})));
+          } catch {}
+
+          const recent = await loadRecent();
+          const chk = isSubmissionDoneInRecent(recent?.results ?? [], sid);
+          if (chk?.done) {
+            await hardClearAndRefresh();
+            return;
+          }
+
+          scheduleNext(data?.nextPollMs ?? 1200);
+          return;
+        }
+
+        if (Math.random() < 0.35) {
+          const recent = await loadRecent();
+          const chk = isSubmissionDoneInRecent(recent?.results ?? [], sid);
+          if (chk?.done) {
+            await hardClearAndRefresh();
+            return;
+          }
+        }
+
+        scheduleNext(data?.nextPollMs ?? null);
+      } catch {
+        scheduleNext(1500);
+      }
+    };
+
+    tick();
+
+    return () => {
+      cancelled = true;
+      stop();
+      if (stopPendingRef.current === stop) stopPendingRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshAll, loadRecent]);
+
+  // --- Recent Results 初回 ---
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!alive) return;
+      await loadRecent();
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [loadRecent]);
+
+  // 投げ出し検知・リロード・戻る・focusで必ず最新取得
+  useEffect(() => {
+    const run = () => {
+      loadRecent();
+      loadData();
+    };
+
+    run();
+
+    const onFocus = () => run();
+    const onVis = () => {
+      if (document.visibilityState === "visible") run();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onFocus);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onFocus);
+    };
+  }, [loadRecent, loadData]);
+
+  // ===== mount effect =====
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      const ok = await checkAuth();
+      if (!ok) {
+        if (alive) setLoading(false);
+        return;
+      }
+      if (!alive) return;
+
+      // pending 表示だけ即復元
+      const p = parsePending(loadPendingRaw());
+      if (p && p.submissionId) {
+        const startedAt = Number.isFinite(Number(p?.savedAt)) ? Number(p.savedAt) : Date.now();
+        setPending({
+          submissionId: p.submissionId,
+          status: p.matchId ? "MATCHED" : "WAITING",
+          matchId: p.matchId || null,
+          priceUsd: p.priceUsd ?? null,
+          stakeCents: p.stakeCents ?? null,
+          savedAt: startedAt,
+        });
+        startedAtRef.current = startedAt;
+        setPendingElapsedMs(Date.now() - startedAt);
+      }
+
+      await refreshAll();
+      await loadWaitingCounts();
+
+      if (alive) setLoading(false);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [checkAuth, refreshAll, loadWaitingCounts]);
+
+  // ===== render =====
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen bg-white font-inter flex items-center justify-center">
+        <div className="text-[14px] text-[#7A7A7A]">Loading...</div>
+      </div>
+    );
+  }
+
+  const pendingElapsedText = pending ? fmtElapsed(pendingElapsedMs) : null;
+  const nextPollText =
+    pending && nextPollInMs != null ? `${Math.max(1, Math.ceil(nextPollInMs / 1000))}s` : "—";
+
+  return (
+    <div className="min-h-screen bg-white font-inter">
+      <div className="border-b border-[#EDEDED]">
+        <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
+            <span className="text-[16px] font-semibold text-[#2B2B2B]">Task Dash</span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <a href="/admin" className="text-[13px] text-[#7A7A7A] hover:text-[#2B2B2B]">
+              Admin
+            </a>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 text-[13px] text-[#7A7A7A] hover:text-[#2B2B2B]"
+            >
+              <LogOut size={16} />
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-[800px] mx-auto px-6 py-8">
+        {/* pending submission カード（/submit画面へ行く） */}
+        {pending ? (
+          <div className="bg-white border border-[#F1F1F1] rounded-xl p-6 mb-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                  {pending.status === "WAITING" ? "⏳ Waiting… (not matched yet)" : "✅ Matched"}
+                </div>
+
+                <div className="text-[12px] text-[#7A7A7A] mt-1">
+                  submissionId: {pending.submissionId}
+                  {pending.matchId ? ` / matchId: ${pending.matchId}` : ""}
+                </div>
+
+                <div className="text-[12px] text-[#7A7A7A] mt-1">
+                  elapsed: <strong>{pendingElapsedText}</strong>
+                  {nextPollText ? (
+                    <>
+                      {" "}
+                      / next check in: <strong>{nextPollText}</strong>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                {pending.matchId ? (
+                  <button
+                    onClick={() =>
+                      (window.location.href = `/match?matchId=${encodeURIComponent(pending.matchId)}`)
+                    }
+                    className="px-4 h-[40px] bg-[#10B981] text-white text-[13px] font-semibold rounded-lg"
+                  >
+                    Open
+                  </button>
+                ) : (
+                  <button
+                    onClick={submitPending}
+                    disabled={submittingPending}
+                    className="px-4 h-[40px] bg-[#2563FF] text-white text-[13px] font-semibold rounded-lg disabled:opacity-50"
+                  >
+                    {submittingPending ? "Opening..." : "Go to Submit Screen"}
+                  </button>
+                )}
+
+                <button
+                  onClick={discardPending}
+                  disabled={submittingPending}
+                  className="px-4 h-[40px] bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg disabled:opacity-50"
+                  title="ローカルの待機表示を消します（サーバ側の待機は継続してOK）"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Balance Card */}
+        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex-1">
+              <div className="text-[13px] text-[#7A7A7A] mb-1">Current Balance</div>
+              <div className="text-[32px] font-semibold text-[#2B2B2B]">{formatUsdFromCents(available)}</div>
+              {reserved > 0 ? (
+                <div className="text-[12px] text-[#F59E0B] mt-1">
+                  {formatUsdFromCents(reserved)} reserved (withdrawal pending)
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setShowAddFundsModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-[#10B981] text-white text-[13px] font-semibold rounded-lg hover:bg-[#059669]"
+              >
+                <Plus size={16} />
+                Add Funds
+              </button>
+              <button
+                onClick={() => setShowWithdrawModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg hover:border-[#2563FF]"
+              >
+                Withdraw
+              </button>
+            </div>
+          </div>
+
+          {/* Select Task Price */}
+          <div className="mb-6">
+            <div className="text-[14px] font-medium text-[#2B2B2B] mb-3">Select Task Price</div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {PRICE_OPTIONS.map((price) => {
+                const waiting = waitingCounts[String(price)] || 0;
+                const disabled = availableUsd < price;
+
+                return (
+                  <button
+                    key={price}
+                    onClick={() => setSelectedPrice(price)}
+                    disabled={disabled}
+                    className={`h-[60px] rounded-lg text-[18px] font-semibold transition-all relative ${
+                      selectedPrice === price
+                        ? "bg-[#2563FF] text-white border-2 border-[#2563FF]"
+                        : disabled
+                        ? "bg-[#F5F5F5] text-[#C3C3C3] border-2 border-[#E5E5E5] cursor-not-allowed"
+                        : "bg-white text-[#2B2B2B] border-2 border-[#E5E5E5] hover:border-[#2563FF]"
+                    }`}
+                  >
+                    ${price}
+                    {waiting > 0 ? (
+                      <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#10B981] rounded-full flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-white">{waiting}</span>
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            onClick={handleAcceptJob}
+            disabled={!selectedPrice || availableUsd < Number(selectedPrice)}
+            className="w-full h-[56px] bg-[#2563FF] text-white text-[16px] font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1E40AF]"
+          >
+            {!selectedPrice
+              ? "Select Price First"
+              : waitingCounts[String(selectedPrice)] > 0
+              ? `Accept Job ($${Number(selectedPrice).toFixed(2)}) - ${waitingCounts[String(selectedPrice)]} waiting`
+              : `Accept Job ($${Number(selectedPrice).toFixed(2)})`}
+          </button>
+
+          {selectedPrice && availableUsd < Number(selectedPrice) ? (
+            <p className="text-[12px] text-[#C33] text-center mt-3">
+              Insufficient balance. Contact admin for more funds.
+            </p>
+          ) : null}
+        </div>
+
+        {/* Recent Results */}
+        <div className="bg-white border border-[#F1F1F1] rounded-xl p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[16px] font-semibold text-[#2B2B2B]">Recent Results</h2>
+            <button
+              onClick={() => refreshAll().catch(() => {})}
+              className="text-[12px] px-3 py-1 border border-[#E5E5E5] rounded-lg hover:border-[#2563FF] hover:text-[#2563FF]"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {/* ★ waiting中でも Recent Results の先頭に必ず出す */}
+          {pending ? (
+            <div style={{ borderTop: "1px solid #eee", paddingTop: 10, marginBottom: 10 }}>
+              <div style={{ fontWeight: 800 }}>{pending.status === "WAITING" ? "⏳ Waiting…" : "✅ Matched"}</div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>submission: {pending.submissionId}</div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                elapsed: <strong>{pendingElapsedText}</strong>
+                {nextPollText ? (
+                  <>
+                    {" "}
+                    / next check in: <strong>{nextPollText}</strong>
+                  </>
+                ) : null}
+              </div>
+              {pending.matchId ? (
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>matchId: {pending.matchId}</div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {recentLoading ? (
+            <div style={{ opacity: 0.7 }}>Loading...</div>
+          ) : recentMatches.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>{recentError ? `Error: ${recentError}` : "No completed jobs yet."}</div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {recentMatches.map((r) => {
+                const myMs = r?.my?.timeMs ?? null;
+                const oppMs = r?.opponent?.timeMs ?? null;
+
+                const mySec = myMs != null ? (Number(myMs) / 1000).toFixed(3) : "-";
+                const oppSec = oppMs != null ? (Number(oppMs) / 1000).toFixed(3) : "-";
+
+                const myScore = r?.my?.score ?? null;
+                const oppScore = r?.opponent?.score ?? null;
+
+                const diff = myScore != null && oppScore != null ? Number(myScore) - Number(oppScore) : null;
+
+                const outcomeLabel =
+                  r?.outcome === "win"
+                    ? "Victory"
+                    : r?.outcome === "lose"
+                    ? "Defeat"
+                    : r?.outcome === "tie"
+                    ? "Draw"
+                    : "Pending";
+
+                const stakeUsd = r?.stakeCents != null ? (Number(r.stakeCents) / 100).toFixed(2) : "0.00";
+
+                const rewardCents =
+                  r?.outcome === "win"
+                    ? r?.payoutWinnerCents ?? 0
+                    : r?.outcome === "lose"
+                    ? r?.payoutLoserCents ?? 0
+                    : r?.payoutWinnerCents ?? 0;
+
+                const rewardUsd = (Number(rewardCents) / 100).toFixed(2);
+
+                const scoreText =
+                  myScore != null && oppScore != null
+                    ? `Score: ${myScore} vs ${oppScore}${diff != null ? ` (${diff > 0 ? "+" : ""}${diff})` : ""}`
+                    : "Score: --";
+
+                const timeText = `Time: ${mySec}s vs ${oppSec}s`;
+                const whenText = r?.settledAt ? new Date(r.settledAt).toLocaleString() : "";
+
+                return (
+                  <div key={r.matchId} style={{ borderTop: "1px solid #eee", paddingTop: 10 }}>
+                    <div style={{ fontWeight: 800 }}>{outcomeLabel} — ${stakeUsd} task</div>
+
+                    <div style={{ fontWeight: 700, marginTop: 2 }}>Reward: ${rewardUsd}</div>
+
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>{scoreText}</div>
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>{timeText}</div>
+
+                    <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>{whenText}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <a
+          href="/rules"
+          className="w-full h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] flex items-center justify-center gap-2 hover:border-[#2563FF] hover:text-[#2563FF]"
+        >
+          <BookOpen size={16} />
+          How Task Dash Works
+        </a>
+      </div>
+
+      {/* Add Funds Modal */}
+      {showAddFundsModal ? (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">Add Funds via PayPal</h3>
+            <p className="text-[13px] text-[#7A7A7A] mb-4">You'll be redirected to PayPal to complete the payment.</p>
+
+            <div className="mb-6">
+              <label className="text-[13px] font-medium text-[#2B2B2B] mb-2 block">Amount (USD)</label>
+              <input
+                type="number"
+                min="1"
+                max="500"
+                value={addFundsAmount}
+                onChange={(e) => setAddFundsAmount(parseFloat(e.target.value) || 1)}
+                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
+              />
+              <p className="text-[11px] text-[#9B9B9B] mt-1">Minimum: $1 | Maximum: $500</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowAddFundsModal(false);
+                  setAddFundsAmount(10);
+                }}
+                disabled={processingPayment}
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddFunds}
+                disabled={processingPayment}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+              >
+                {processingPayment ? "Processing..." : `Add $${Number(addFundsAmount).toFixed(2)}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Withdraw Modal */}
+      {showWithdrawModal ? (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">Withdraw to PayPal</h3>
+            <p className="text-[13px] text-[#7A7A7A] mb-4">
+              Available balance: <strong>{formatUsdFromCents(available)}</strong>
+            </p>
+
+            <div className="mb-4">
+              <label className="text-[13px] font-medium text-[#2B2B2B] mb-2 block">Amount (USD)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
+                placeholder="Enter amount"
+              />
+            </div>
+
+            <div className="mb-6">
+              <label className="text-[13px] font-medium text-[#2B2B2B] mb-2 block">PayPal Email</label>
+              <input
+                type="email"
+                value={paypalEmail}
+                onChange={(e) => setPaypalEmail(e.target.value)}
+                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
+                placeholder="your@email.com"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowWithdrawModal(false);
+                  setWithdrawAmount("");
+                  setPaypalEmail("");
+                }}
+                disabled={processingWithdraw}
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleWithdraw}
+                disabled={processingWithdraw}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+              >
+                {processingWithdraw ? "Processing..." : "Withdraw"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Confirm Modal */}
+      {showConfirmModal ? (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">Accept Job?</h3>
+            <p className="text-[14px] text-[#7A7A7A] mb-6">
+              Task price: <strong>${Number(selectedPrice || 0).toFixed(2)}</strong>
+              <br />
+              Your balance after: <strong>${(availableUsd - Number(selectedPrice || 0)).toFixed(2)}</strong>
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAcceptJob}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

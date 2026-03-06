@@ -39,7 +39,7 @@ export default function RecentResultsPanel({
         const peerTimeMs = it.opponent && typeof it.opponent.timeMs === "number" ? it.opponent.timeMs : it.cpuTimeMs;
 
         const badge =
-          outcome === "win" ? "Win" : outcome === "lose" ? "Lose" : outcome === "tie" ? "Tie" : outcome ? outcome : "—";
+          outcome === "win" ? "Win" : outcome === "lose" ? "Lose" : outcome === "tie" ? "Tie" : outcome ? outcome : " E;
 
         return (
           <div key={String(id)} className="border border-[#F1F1F1] rounded-xl p-4">
@@ -71,13 +71,13 @@ export default function RecentResultsPanel({
               <div className="rounded-lg border border-[#F1F1F1] p-3">
                 <div className="text-[12px] text-[#7A7A7A]">You</div>
                 <div className="text-[14px] font-semibold text-[#2B2B2B] mt-1">
-                  Score: {youScore != null ? String(youScore) : "—"} · Time: {youTimeMs != null ? fmtElapsed(youTimeMs) : "—"}
+                  Score: {youScore != null ? String(youScore) : " E} · Time: {youTimeMs != null ? fmtElapsed(youTimeMs) : " E}
                 </div>
               </div>
               <div className="rounded-lg border border-[#F1F1F1] p-3">
                 <div className="text-[12px] text-[#7A7A7A]">Opponent</div>
                 <div className="text-[14px] font-semibold text-[#2B2B2B] mt-1">
-                  Score: {peerScore != null ? String(peerScore) : "—"} · Time: {peerTimeMs != null ? fmtElapsed(peerTimeMs) : "—"}
+                  Score: {peerScore != null ? String(peerScore) : " E} · Time: {peerTimeMs != null ? fmtElapsed(peerTimeMs) : " E}
                 </div>
               </div>
             </div>
@@ -87,3 +87,4 @@ export default function RecentResultsPanel({
     </div>
   );
 }
+

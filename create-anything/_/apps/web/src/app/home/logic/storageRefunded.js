@@ -88,3 +88,4 @@ export function writeRefundedList(list) {
     localStorage.setItem(REFUNDED_KEY, JSON.stringify(safe));
   } catch {}
 }
+

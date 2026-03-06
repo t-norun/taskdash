@@ -43,3 +43,4 @@ export function TimeStatistics({ timeStats }) {
     </div>
   );
 }
+

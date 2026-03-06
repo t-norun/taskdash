@@ -98,3 +98,4 @@ export function writeWaitingList(list) {
     localStorage.setItem(WAITING_KEY, JSON.stringify(safe));
   } catch {}
 }
+

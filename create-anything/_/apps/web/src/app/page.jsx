@@ -1,20 +1,12 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useState } from "react";
-import Landing from "./landing/page";
+import { useEffect } from "react";
 
 export default function Page() {
-  const [ready, setReady] = useState(false);
-
   useEffect(() => {
-    const token = localStorage.getItem("taskdash_access_token");
-    if (token) {
-      window.location.replace("/balance");
-      return;
-    }
-    setReady(true);
+    window.location.replace("/task");
   }, []);
 
-  if (!ready) return null;
-  return <Landing />;
+  return null;
 }
+

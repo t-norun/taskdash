@@ -1,15 +1,10 @@
-// create-anything/apps/web/src/utils/auth.js
+﻿// create-anything/_/apps/web/src/utils/auth.js
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "https://api.taskdash.net").replace(/\/+$/, "");
 
 /**
- * Taskdash v2 用：userId直渡し（Bearer/JWTは使わない）
- * - userId: localStorage "taskdash.userId"
- * - devKey: localStorage "x-dev-key"（dev-local-123 を入れてる前提）
- * - /api/* を API_BASE に向ける（既存create-anything互換）
+ * userId を localStorage に保持
  */
-
 export function getOrCreateUserId() {
   let userId = localStorage.getItem("taskdash.userId");
   if (!userId) {
@@ -19,32 +14,46 @@ export function getOrCreateUserId() {
   return userId;
 }
 
+/**
+ * v2 では userId があればログイン済み扱い
+ */
 export function isAuthenticated() {
-  // v2では userId があればOK（ログイン概念を捨てる）
   return !!localStorage.getItem("taskdash.userId");
 }
 
-function toApiUrl(url) {
-  if (!url) return url;
+/**
+ * API 用 URL に正規化
+ */
+function toApiUrl(path) {
+  if (!path) return path;
 
   // すでに絶対URLならそのまま
-  if (url.startsWith("http")) return url;
+  if (/^https?:\/\//i.test(path)) return path;
 
-  // create-anything内部のパスはそのまま（必要なら）
-  if (url.startsWith("/_create/")) return url;
+  // React Router / create-anything 系内部パスはそのまま
+  if (path.startsWith("/_create/")) return path;
 
   // /api/... は API_BASE に向ける
-  if (url.startsWith("/api/")) return `${API_BASE}${url}`;
+  if (path.startsWith("/api/")) {
+    return `${API_BASE}${path}`;
+  }
 
-  // それ以外はそのまま（相対を使ってる箇所があっても壊さない）
-  return url;
+  // 先頭スラッシュなしでも API パスとして扱えるよう保険
+  if (path.startsWith("api/")) {
+    return `${API_BASE}/${path}`;
+  }
+
+  // それ以外の相対パスはそのまま
+  return path;
 }
 
+/**
+ * 必要なら userId をクエリに付ける
+ * ただし create 画面や、すでに userId があるURLには付けない
+ */
 function appendUserId(url, userId) {
-  // /_create/ は userId を付けない
+  if (!url || !userId) return url;
   if (url.startsWith("/_create/")) return url;
-
-  // 既に userId が付いてたらそのまま
   if (url.includes("userId=")) return url;
 
   const sep = url.includes("?") ? "&" : "?";
@@ -52,30 +61,40 @@ function appendUserId(url, userId) {
 }
 
 /**
- * 認証付きFetch（v2: userId + x-dev-key）
+ * 認証付き fetch
+ * - Bearer token があれば付ける
+ * - token がなくても userId をクエリに付けて通せるようにする
+ * - /api/... は必ず API_BASE に向ける
  */
 export async function authenticatedFetch(path, options = {}) {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-
+  const rawUrl = toApiUrl(path);
   const token =
     localStorage.getItem("taskdash_access_token") ||
     localStorage.getItem("taskdash_token") ||
     "";
+
+  const userId =
+    localStorage.getItem("taskdash.userId") || getOrCreateUserId();
+
+  const url = token ? rawUrl : appendUserId(rawUrl, userId);
 
   const headers = new Headers(options.headers || {});
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const finalOptions = { ...options, headers };
+  const finalOptions = {
+    ...options,
+    headers,
+  };
 
+  console.log("AUTH_FETCH base =", API_BASE);
+  console.log("AUTH_FETCH path =", path);
   console.log("AUTH_FETCH url =", url);
   console.log("AUTH_FETCH options =", finalOptions);
 
   const res = await fetch(url, finalOptions);
 
-  // ↓ デバッグ用（壊れない・二重宣言しない・json()を邪魔しない）
   try {
     console.log("AUTH_FETCH status =", res.status);
     const bodyPreview = await res.clone().text();
@@ -88,17 +107,20 @@ export async function authenticatedFetch(path, options = {}) {
 }
 
 /**
- * ユーザー情報（旧UI互換）
- * - v2の /home?userId=... を叩いて、形だけ合わせて返す
+ * 旧UI互換の user 情報取得
  */
 export async function getUser() {
   const r = await authenticatedFetch("/api/user/balance", { method: "GET" });
   const j = await r.json();
-  if (!j?.ok) throw new Error(j?.error || "getUser failed");
+
+  if (!j?.ok) {
+    throw new Error(j?.error || "getUser failed");
+  }
 
   return {
     id: j.userId,
     userId: j.userId,
+    email: j.email || "",
     balance: j.balance ?? 0,
     reserved: j.reserved ?? 0,
     available: j.available ?? j.balance ?? 0,
@@ -107,12 +129,12 @@ export async function getUser() {
 }
 
 /**
- * ログアウト（v2版）
- * - JWTなど無いので userId を消すだけ
+ * ログアウト
  */
 export async function logout() {
   localStorage.removeItem("taskdash.userId");
-  // create-anything側が/loginに飛ばす設計なら残してもいいが、
-  // 今はUIを動かすのが目的なのでリロードにする
+  localStorage.removeItem("taskdash_access_token");
+  localStorage.removeItem("taskdash_token");
   window.location.href = "/";
 }
+

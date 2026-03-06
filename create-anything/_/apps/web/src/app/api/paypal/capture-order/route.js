@@ -5,7 +5,7 @@ import { authenticateUser } from "../../utils/auth";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
@@ -16,7 +16,7 @@ function forwardHeaders(request) {
   const cookie = request.headers.get("cookie");
   if (cookie) h.set("cookie", cookie);
 
-  // v2 dev endpoint を叩くなら必要（あなたの環境だと x-dev-key あるはず）
+  // v2 dev endpoint を叩くなら忁E��E��あなた�E環墁E��と x-dev-key あるはず！E
   const devKey =
     request.headers.get("x-dev-key") ||
     process.env.V2_DEV_KEY ||
@@ -30,14 +30,14 @@ function forwardHeaders(request) {
 async function creditToV2({ request, userId, captureId, amountUsd }) {
   const amountCents = Math.round(Number(amountUsd) * 100);
 
-  // v2 入金候補（環境差吸収）
+  // v2 入金候補（環墁E��吸収！E
   const candidates = [
-    // 本命：あなたがすでに使ってた dev 入金
+    // 本命�E�あなたがすでに使ってぁEdev 入釁E
     {
       url: `${V2_BASE}/dev/tx/entry`,
       body: { userId, transactionId: captureId, amount: amountCents },
     },
-    // もし将来、正式な入金APIができた場合
+    // もし封E��、正式な入金APIができた場吁E
     {
       url: `${V2_BASE}/tx/deposit`,
       body: { userId, transactionId: captureId, amountCents },
@@ -64,7 +64,7 @@ async function creditToV2({ request, userId, captureId, amountUsd }) {
     last = { url: c.url, status: res.status, data };
 
     if (!res.ok || data?.ok === false) {
-      // 404以外の失敗は打ち切り
+      // 404以外�E失敗�E打ち刁E��
       break;
     }
 
@@ -75,7 +75,7 @@ async function creditToV2({ request, userId, captureId, amountUsd }) {
 }
 
 async function fetchV2UserBalanceUsd({ request, userId }) {
-  // v2 wallet 取得候補
+  // v2 wallet 取得候裁E
   const candidates = [
     `${V2_BASE}/wallets/by-user?userId=${encodeURIComponent(userId)}`,
     `${V2_BASE}/dev/wallets/by-user?userId=${encodeURIComponent(userId)}`,
@@ -106,7 +106,7 @@ async function fetchV2UserBalanceUsd({ request, userId }) {
 }
 
 /**
- * PayPal決済を確定し、v2 wallet に入金
+ * PayPal決済を確定し、v2 wallet に入釁E
  */
 export async function POST(request) {
   try {
@@ -119,7 +119,7 @@ export async function POST(request) {
       return Response.json({ error: "Order ID required" }, { status: 400 });
     }
 
-    // 1) PayPalで決済を確定
+    // 1) PayPalで決済を確宁E
     const captureData = await paypalRequest(`/v2/checkout/orders/${orderId}/capture`, {
       method: "POST",
     });
@@ -138,7 +138,7 @@ export async function POST(request) {
 
     console.log(`💰 Capture amount: $${captureAmount}, captureId: ${captureId}`);
 
-    // 2) v2 に入金（captureId を transactionId にして二重計上を防ぐ）
+    // 2) v2 に入金！EaptureId めEtransactionId にして二重計上を防ぐ！E
     const credit = await creditToV2({
       request,
       userId: String(user.id),
@@ -156,8 +156,8 @@ export async function POST(request) {
       );
     }
 
-    // 3) legacy 側は「PayPal取引ログ」だけ更新（残してもOK・消してもOK）
-    // ※ここで users.balance / ledger は更新しない（v2を正にする）
+    // 3) legacy 側は「PayPal取引ログ」だけ更新�E�残してもOK・消してもOK�E�E
+    // ※ここで users.balance / ledger は更新しなぁE��E2を正にする�E�E
     await sql.transaction([
       sql`
         UPDATE paypal_transactions
@@ -169,7 +169,7 @@ export async function POST(request) {
       `,
     ]);
 
-    // 4) v2の残高を返す（取れなければ null）
+    // 4) v2の残高を返す�E�取れなければ null�E�E
     const newBalanceUsd = await fetchV2UserBalanceUsd({
       request,
       userId: String(user.id),
@@ -180,14 +180,15 @@ export async function POST(request) {
       captureId,
       amount: captureAmount,
       newBalance: newBalanceUsd, // v2から取れたら数値、取れなければ null
-      // デバッグ用に残しておく（不要なら消してOK）
+      // チE��チE��用に残しておく�E�不要なら消してOK�E�E
       v2: credit.data,
     });
   } catch (error) {
-    console.error("❌ Capture PayPal order error:", error);
+    console.error("❁ECapture PayPal order error:", error);
     return Response.json(
       { error: error?.message || "Failed to capture order" },
       { status: error?.message?.includes("Unauthorized") ? 401 : 500 },
     );
   }
 }
+

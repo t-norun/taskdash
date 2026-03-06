@@ -1,15 +1,15 @@
 // apps/web/src/app/api/[...path]/route.js
-// 4000側の /api/* を 3000(API) へ中継するプロキシ
-// - CORSを回避するため、ブラウザは常に同一オリジン(4000)の /api を叩く
-// - 認証ヘッダー等もそのまま転送
+// 4000側の /api/* めE3000(API) へ中継する�Eロキシ
+// - CORSを回避するため、ブラウザは常に同一オリジン(4000)の /api を叩ぁE
+// - 認証ヘッダー等もそ�Eまま転送E
 
-const API_ORIGIN = "http://localhost:3000";
+const API_ORIGIN = "https://api.taskdash.net";
 
 async function proxy(request, params) {
   const path = Array.isArray(params?.path) ? params.path.join("/") : String(params?.path || "");
   const targetUrl = `${API_ORIGIN}/api/${path}${new URL(request.url).search}`;
 
-  // 元リクエストのヘッダーをコピー（host等は除外）
+  // 允E��クエスト�Eヘッダーをコピ�E�E�Eost等�E除外！E
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("connection");
@@ -24,9 +24,9 @@ async function proxy(request, params) {
 
   const upstream = await fetch(targetUrl, init);
 
-  // upstreamレスポンスをそのまま返す（content-type等も維持）
+  // upstreamレスポンスをそのまま返す�E�Eontent-type等も維持E��E
   const resHeaders = new Headers(upstream.headers);
-  // 4000→ブラウザは同一オリジンなのでCORSヘッダは不要だが、念のため害はない
+  // 4000→ブラウザは同一オリジンなのでCORSヘッダは不要だが、念のため害はなぁE
   resHeaders.set("Access-Control-Allow-Origin", "*");
 
   return new Response(await upstream.arrayBuffer(), {
@@ -60,3 +60,4 @@ export async function OPTIONS() {
     },
   });
 }
+

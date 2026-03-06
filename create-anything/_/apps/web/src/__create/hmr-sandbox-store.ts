@@ -45,3 +45,4 @@ export const useSandboxStore = create<SandboxState>((set, get) => ({
 	stopCodeGen: () => get().setStatus('codegen-stopped'),
 	resetToIdle: () => get().setStatus('idle'),
 }));
+

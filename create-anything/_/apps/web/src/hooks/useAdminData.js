@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "https://api.taskdash.net";
 const DEV_KEY = import.meta.env.VITE_DEV_KEY ?? "dev-local-123";
 
 export function useAdminData(activeTab) {
@@ -73,7 +73,7 @@ export function useAdminData(activeTab) {
     }
   };
 
-  // DEV deposit（unitsをそのまま入れる）
+  // DEV deposit�E�Enitsをそのまま入れる�E�E
   const addDevDeposit = async (amountUnits) => {
     const token = getToken();
     try {
@@ -90,7 +90,7 @@ export function useAdminData(activeTab) {
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || "DEV deposit failed");
 
-      // 強制的に再同期
+      // 強制皁E��再同朁E
       await loadData();
 
       setHistory((h) => [
@@ -116,3 +116,4 @@ export function useAdminData(activeTab) {
     setOpenAddFunds,
   };
 }
+

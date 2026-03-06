@@ -32,3 +32,4 @@ export async function POST(request) {
     return Response.json({ error: "Failed to grant balance" }, { status: 500 });
   }
 }
+

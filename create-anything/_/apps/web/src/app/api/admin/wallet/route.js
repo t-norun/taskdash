@@ -1,6 +1,6 @@
 import sql from "../../utils/sql";
 
-// 管理者権限チェック
+// 管琁E��E��限チェチE��
 function isAdmin(email) {
   return email === "taskdash.llc@gmail.com";
 }
@@ -29,9 +29,9 @@ export async function GET(request) {
       return Response.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    // 運営ウォレット残高（2つのソースから集計）
-    // 1. platform_fee カラム（古いエントリ）
-    // 2. user_id IS NULL AND type = 'PLATFORM_FEE'（新しいエントリ）
+    // 運営ウォレチE��残高！Eつのソースから雁E��！E
+    // 1. platform_fee カラム�E�古ぁE��ントリ�E�E
+    // 2. user_id IS NULL AND type = 'PLATFORM_FEE'�E�新しいエントリ�E�E
     const platformFees = await sql`
       SELECT 
         COALESCE(SUM(platform_fee), 0) as fees_from_column,
@@ -112,7 +112,7 @@ export async function POST(request) {
       return Response.json({ error: "Invalid amount" }, { status: 400 });
     }
 
-    // 現在の残高を確認（2つのソースから集計）
+    // 現在の残高を確認！Eつのソースから雁E��！E
     const platformFees = await sql`
       SELECT 
         COALESCE(SUM(platform_fee), 0) as fees_from_column,
@@ -140,7 +140,7 @@ export async function POST(request) {
       );
     }
 
-    // 出金申請を作成
+    // 出金申請を作�E
     const result = await sql`
       INSERT INTO platform_withdrawals (amount, notes)
       VALUES (${amount}, ${notes || null})
@@ -165,3 +165,4 @@ export async function POST(request) {
     );
   }
 }
+

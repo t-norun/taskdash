@@ -1,6 +1,6 @@
 // src/utils/v2Client.ts
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = "https://api.taskdash.net";
 
 function getToken() {
   return localStorage.getItem("taskdash_access_token") || "";
@@ -24,3 +24,4 @@ export async function v2GetBalance() {
   if (!r.ok) throw new Error(`balance failed ${r.status}: ${text}`);
   return JSON.parse(text);
 }
+

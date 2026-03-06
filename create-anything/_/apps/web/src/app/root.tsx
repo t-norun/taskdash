@@ -13,7 +13,7 @@ import "./global.css";
 import { Toaster } from "sonner";
 
 /* ================================
-   ErrorBoundary（OK・触らない）
+   ErrorBoundary�E�EK・触らなぁE��E
 ================================ */
 export function ErrorBoundary() {
   const error = useRouteError();
@@ -40,7 +40,7 @@ function ClientSideEffects() {
     if (typeof window === "undefined") return;
 
     const API_BASE =
-      import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:3000";
+      import.meta.env?.VITE_API_BASE_URL ?? "https://api.taskdash.net";
 
     const original = window.fetch.bind(window);
 
@@ -68,7 +68,7 @@ function ClientSideEffects() {
 }
 
 /* ================================
-   Layout（副作用ゼロ！）
+   Layout�E�副作用ゼロ�E�E��E
 ================================ */
 export function Layout({ children }: { children: ReactNode }) {
   return (
@@ -105,4 +105,5 @@ export function Layout({ children }: { children: ReactNode }) {
 export default function App() {
   return <Outlet />;
 }
+
 

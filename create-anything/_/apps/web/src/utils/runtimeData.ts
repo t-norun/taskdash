@@ -1,6 +1,6 @@
 /**
  * apps/web/src/utils/runtimeData.ts
- * UIはこのファイル経由でのみデータ取得する
+ * UIはこ�Eファイル経由でのみチE�Eタ取得すめE
  */
 
 import { authenticatedFetch } from "./auth";
@@ -67,7 +67,7 @@ function makeUuid(): string {
 
   const bytes = new Uint8Array(16);
 
-  // ★ TS/ブラウザ両対応：globalThis.crypto 経由で getRandomValues
+  // ☁ETS/ブラウザ両対応：globalThis.crypto 経由で getRandomValues
   try {
     const anyCrypto: any = (globalThis as any).crypto;
     if (anyCrypto?.getRandomValues) anyCrypto.getRandomValues(bytes);
@@ -86,7 +86,7 @@ function makeUuid(): string {
   )}-${hex.slice(20)}`;
 }
 
-/** payout用 requestId（ブラウザ安全版） */
+/** payout用 requestId�E�ブラウザ安�E版！E*/
 function makeRequestId(): string {
   try {
     const anyCrypto: any = (globalThis as any).crypto;
@@ -119,7 +119,7 @@ export function clearAttemptIdStorage() {
   safeDel(ATTEMPT_ID_KEY);
 }
 
-/** 互換（Taskページが import してる名前に合わせる） */
+/** 互換�E�Easkペ�EジぁEimport してる名前に合わせる�E�E*/
 export function saveAttemptIdStorage(attemptId: any) {
   const s = String(attemptId || "").trim();
   if (!s) return;
@@ -132,7 +132,7 @@ export function loadAttemptIdStorage(): string | null {
 /* =====================================================
    DEMO BALANCE (CENTS)
    - demo_balance_cents を正とする
-   - 旧 demo_balance (整数USD) があれば移行
+   - 旧 demo_balance (整数USD) があれ�E移衁E
 ===================================================== */
 
 const DEMO_BAL_CENTS_KEY = "demo_balance_cents";
@@ -165,13 +165,13 @@ function getDemoBalanceUsd(): number {
   return getDemoBalanceCents() / 100;
 }
 
-/** UIから呼ぶやつ（USDで指定OK・小数OK） */
+/** UIから呼ぶめE���E�ESDで持E��OK・小数OK�E�E*/
 export function setDemoBalance(usd: number) {
   const cents = Math.round((Number(usd) || 0) * 100);
   setDemoBalanceCents(cents);
 }
 
-/** UIから呼ぶやつ（USDで加算OK・小数OK） */
+/** UIから呼ぶめE���E�ESDで加算OK・小数OK�E�E*/
 export function addDemoBalance(deltaUsd: number) {
   const deltaCents = Math.round((Number(deltaUsd) || 0) * 100);
   setDemoBalanceCents(getDemoBalanceCents() + deltaCents);
@@ -179,7 +179,7 @@ export function addDemoBalance(deltaUsd: number) {
 
 /* =====================================================
    DEMO CPU/PLATFORM BALANCE (CENTS)
-   - “CPUも同額参加費を払う” を成立させるための内部勘定
+   - “CPUも同額参加費を払ぁE��Eを�E立させるための冁E��勘宁E
 ===================================================== */
 
 const DEMO_CPU_CENTS_KEY = "demo_cpu_balance_cents";
@@ -241,9 +241,9 @@ function floor0(v: any): number {
 }
 
 /**
- * ✅ 管理者だけ通るAPIを叩く
- * - 403/401 は「非管理者」の正常系（呼び出し側が isAdmin 判定で使う）
- * - 返却のキー名が多少違っても balanceCents/balanceUsd に正規化して返す
+ * ✁E管琁E��E��け通るAPIを叩ぁE
+ * - 403/401 は「非管琁E��E���E正常系�E�呼び出し�EぁEisAdmin 判定で使ぁE��E
+ * - 返却のキー名が多少違ってめEbalanceCents/balanceUsd に正規化して返す
  */
 export async function getPlatformBalance(): Promise<PlatformBalanceResult> {
   // demo: local
@@ -280,7 +280,7 @@ export async function getPlatformBalance(): Promise<PlatformBalanceResult> {
 
 /* =====================================================
    DEMO STAKE MAP (attemptId -> stakeCents)
-   - acceptJob(demo) で引いた stake を submitTask(demo) で参照
+   - acceptJob(demo) で引いぁEstake めEsubmitTask(demo) で参�E
 ===================================================== */
 
 const DEMO_STAKE_MAP_KEY = "taskdash_demo_stakes_v1";
@@ -321,11 +321,11 @@ function popDemoStakeCents(attemptId: string): number {
 
 /* =====================================================
    WAITING (local cache helper)
-   - Taskページが import してる upsertWaiting を提供する
+   - Taskペ�EジぁEimport してめEupsertWaiting を提供すめE
 ===================================================== */
 
-// ★本番仕様：Waiting は24時間でタイムアウト返金
-// realはサーバーが判定・返金する（ここはUI整形/デモ用）
+// ☁E��番仕様：Waiting は24時間でタイムアウト返��
+// realはサーバ�Eが判定�E返��する�E�ここ�EUI整形/チE��用�E�E
 const REFUND_AFTER_MS = 24 * 60 * 60 * 1000; // 24h
 
 const WAITING_KEY = "taskdash_waiting";
@@ -336,10 +336,10 @@ export type WaitingItem = {
   statusCompat?: string;
   priceUsd?: number | null;
 
-  // 既存
+  // 既孁E
   updatedAt?: string | null;
 
-  // ★追加（UI用）
+  // ☁E��加�E�EI用�E�E
   createdAt?: string | null;
   expiresAt?: string | null;
   remainingMs?: number | null;
@@ -426,14 +426,14 @@ function removeWaiting(submissionId: string) {
 }
 
 /* =====================================================
-   DEMO CPU MATCH (local “mini DB”)
-   - submitTask() で CPU相手の結果を作って保存
-   - checkMatch() で revealAt までは waiting、過ぎたら matched を返す
-   - 経済ルール：pot=2*stake, 90/5/5
+   DEMO CPU MATCH (local “mini DB E
+   - submitTask() で CPU相手�E結果を作って保孁E
+   - checkMatch() で revealAt までは waiting、E��ぎためEmatched を返す
+   - 経済ルール�E�pot=2*stake, 90/5/5
 ===================================================== */
 
 const DEMO_MATCH_KEY = "taskdash_demo_matches_v1";
-const DEMO_CPU_LEVEL_KEY = "taskdash_demo_cpu_level"; // 0.0-1.0 (任意)
+const DEMO_CPU_LEVEL_KEY = "taskdash_demo_cpu_level"; // 0.0-1.0 (任愁E
 
 type DemoMatch = {
   submissionId: string;
@@ -452,7 +452,7 @@ type DemoMatch = {
 
   player: {
     id: "demo_user";
-    score: number; // 小さいほど強い想定
+    score: number; // 小さぁE��ど強ぁE��宁E
     timeMs?: number | null;
   };
   cpu: {
@@ -464,7 +464,7 @@ type DemoMatch = {
   };
 
   outcome: "win" | "lose" | "draw";
-  deltaUsd: number; // ユーザーの純増減（payout - stake）
+  deltaUsd: number; // ユーザーの純増減！Eayout - stake�E�E
 };
 
 function clamp01(x: any) {
@@ -526,7 +526,7 @@ function getDemoMatchBySubmissionId(submissionId: string): DemoMatch | null {
   return null;
 }
 
-// プレイヤー強さ推定
+// プレイヤー強さ推宁E
 function inferPlayerScore(payload: any): { score: number; timeMs?: number | null } {
   const timeMs = Number(payload?.timeMs ?? payload?.elapsedMs ?? payload?.elapsed ?? null);
   const scoreRaw = payload?.score ?? payload?.resultScore ?? payload?.diffScore ?? null;
@@ -542,17 +542,17 @@ function inferPlayerScore(payload: any): { score: number; timeMs?: number | null
   }
 
   if (Number.isFinite(timeMs) && timeMs > 0) {
-    const s = Math.max(1, Math.floor(timeMs / 100)); // 10秒=100
+    const s = Math.max(1, Math.floor(timeMs / 100)); // 10私E100
     return { score: s, timeMs };
   }
 
   return { score: 100, timeMs: null };
 }
 
-// CPUスコア生成（小さいほど強い）
+// CPUスコア生�E�E�小さぁE��ど強ぁE��E
 function generateCpuScore(playerScore: number, cpuLevel01: number) {
-  const baseSpread = 30 - Math.floor(cpuLevel01 * 18); // level高いほどブレ小
-  const bias = Math.floor((cpuLevel01 - 0.5) * 20); // level高いほどCPUが少し強い
+  const baseSpread = 30 - Math.floor(cpuLevel01 * 18); // level高いほどブレ封E
+  const bias = Math.floor((cpuLevel01 - 0.5) * 20); // level高いほどCPUが少し強ぁE
 
   const rand = Math.floor(Math.random() * (baseSpread * 2 + 1)) - baseSpread;
   const cpuScore = Math.max(1, Math.floor(playerScore + rand - bias));
@@ -625,13 +625,13 @@ export async function getBalance(): Promise<BalanceResult> {
 
 export async function listWaiting(limit = 20) {
   if (isDemoMode()) {
-    // Demo: waitingキャッシュの “まだ reveal 前” ＋ “24h期限内” を返す
+    // Demo: waitingキャチE��ュの “まだ reveal 前 E�E�E E4h期限冁E��Eを返す
     const now = Date.now();
     const max = Math.max(1, Math.min(50, Number(limit) || 20));
 
     const items = loadWaitingCache()
       .map((x) => {
-        // expiresAt が無い古いキャッシュは createdAt/updatedAt から補完
+        // expiresAt が無ぁE��ぁE��ャチE��ュは createdAt/updatedAt から補宁E
         const baseIso = (x?.createdAt as any) ?? (x?.updatedAt as any) ?? new Date().toISOString();
 
         const expiresAt =
@@ -646,11 +646,11 @@ export async function listWaiting(limit = 20) {
         };
       })
       .filter((x) => {
-        // 24h超えは waiting に残さない（demoでは返金済み扱い）
+        // 24h趁E��は waiting に残さなぁE��Eemoでは返��済み扱ぁE��E
         const exp = Date.parse(String(x?.expiresAt || ""));
         if (Number.isFinite(exp) && now >= exp) return false;
 
-        // CPU match の reveal 前だけ waiting
+        // CPU match の reveal 前だぁEwaiting
         const sid = String(x?.submissionId || "");
         const m = getDemoMatchBySubmissionId(sid);
         if (!m) return true;
@@ -682,10 +682,10 @@ export async function acceptJob(priceUsd: number) {
 
     const attemptId = makeUuid();
 
-    // ★参加費を払う（デモでも必須）
+    // ☁E��加費を払ぁE��デモでも忁E��！E
     setDemoBalanceCents(bal - stakeCents);
 
-    // submitで決済に使う
+    // submitで決済に使ぁE
     setDemoStakeCents(attemptId, stakeCents);
 
     setAttemptIdStorage(attemptId);
@@ -724,7 +724,7 @@ export type CurrentResult =
       expiresAt?: string | null;
       seed?: string | null;
       task?: any;
-      hasTask?: boolean; // Taskページ互換（あると嬉しい）
+      hasTask?: boolean; // Taskペ�Eジ互換�E�あると嬉しぁE��E
     }
   | { ok: false; error: string };
 
@@ -773,11 +773,11 @@ export async function submitTask(payload: any) {
       Math.trunc(Number(payload?.priceUsd ?? payload?.price ?? payload?.tier ?? 1) || 1)
     );
 
-    // acceptで引いた stake を使う（無ければ price から）
+    // acceptで引いぁEstake を使ぁE��無ければ price から�E�E
     const stakeCents = popDemoStakeCents(attemptId) || priceUsd * 100;
 
-    // Demo: waitingに載せる（UI用）
-    // ※ expiresAt/createdAt は upsertWaiting 側が確実に埋める
+    // Demo: waitingに載せる！EI用�E�E
+    // ※ expiresAt/createdAt は upsertWaiting 側が確実に埋めめE
     upsertWaiting({
       submissionId,
       attemptId,
@@ -786,20 +786,20 @@ export async function submitTask(payload: any) {
       priceUsd,
     });
 
-    // CPUも同額参加費を払う（内部勘定）
+    // CPUも同額参加費を払ぁE���E部勘定！E
     setDemoCpuCents(getDemoCpuCents() - stakeCents);
 
-    // 強さ推定＆CPU生成
+    // 強さ推定！EPU生�E
     const player = inferPlayerScore(payload);
     const cpuLevel = getDemoCpuLevel();
     const cpuScore = generateCpuScore(player.score, cpuLevel);
     const outcome = decideOutcome(player.score, cpuScore);
 
-    // pot=2*stake, 90/5/5（drawは両者返金＆手数料0にする）
+    // pot=2*stake, 90/5/5�E�Erawは両老E���߁E�E��数斁Eにする�E�E
     const potCents = stakeCents * 2;
     const winnerPayoutCents = Math.round(potCents * 0.9);
     const loserPayoutCents = Math.round(potCents * 0.05);
-    const feeCents = potCents - winnerPayoutCents - loserPayoutCents; // 誤差吸収
+    const feeCents = potCents - winnerPayoutCents - loserPayoutCents; // 誤差吸叁E
 
     let userPayoutCents = 0;
     let cpuPayoutCents = 0;
@@ -820,15 +820,15 @@ export async function submitTask(payload: any) {
       platformFeeCents = 0;
     }
 
-    // “演出” 用に少し待たせる（0.7〜1.4秒）
+    // “演�E E用に少し征E��せる�E�E.7、E.4秒！E
     const now = Date.now();
     const delayMs = 700 + Math.floor(Math.random() * 700);
     const revealAt = new Date(now + delayMs).toISOString();
 
-    // ★ユーザー残高：acceptで -stake 済みなので、ここでは payout を足すだけ
+    // ☁E��ーザー残高：acceptで -stake 済みなので、ここでは payout を足すだぁE
     setDemoBalanceCents(getDemoBalanceCents() + userPayoutCents);
 
-    // CPU/Platform 内部勘定（完全一致）
+    // CPU/Platform 冁E��勘定（完�E一致�E�E
     addDemoCpuCents(cpuPayoutCents);
     addDemoPlatformCents(platformFeeCents);
 
@@ -863,7 +863,7 @@ export async function submitTask(payload: any) {
 
     upsertDemoMatch(m);
 
-    // submit返却は waiting のままでOK（Task側はcheckMatchをpollする前提）
+    // submit返却は waiting のままでOK�E�Eask側はcheckMatchをpollする前提�E�E
     return {
       ok: true,
       submissionId,
@@ -953,7 +953,7 @@ export async function recentResults(limit = 5) {
         outcome: m.outcome,
         deltaUsd: m.deltaUsd,
 
-        // 90/5/5の内訳（UIが拾える）
+        // 90/5/5の冁E���E�EIが拾える�E�E
         stakeCents: m.stakeCents,
         potCents: m.potCents,
         platformFeeCents: m.platformFeeCents,
@@ -993,8 +993,8 @@ export async function listForfeited(limit = 20) {
 ===================================================== */
 
 /**
- * create order（入金側）
- * UIの import が createPaypalOrder なので、その名前で提供する
+ * create order�E��E金�E�E�E
+ * UIの import ぁEcreatePaypalOrder なので、その名前で提供すめE
  */
 export async function createPaypalOrder(priceUsd: number) {
   if (isDemoMode()) return { ok: false, error: "paypal disabled in demo" };
@@ -1004,7 +1004,7 @@ export async function createPaypalOrder(priceUsd: number) {
     return { ok: false, error: "invalid priceUsd" };
   }
 
-  // 念のため（小数/誤差対策）
+  // 念のため�E�小数/誤差対策！E
   const normalizedUsd = Math.round(amtUsd * 100) / 100;
 
   const r = await authenticatedFetch("/api/paypal/create-order", {
@@ -1029,7 +1029,7 @@ export async function adminPaypalPayout(amountCents: number, paypalEmail: string
 }
 
 /**
- * payout（出金側）
+ * payout�E��E金�E�E�E
  */
 export async function paypalPayout(amountUsd: number, paypalEmail: string) {
   if (isDemoMode()) return { ok: false, error: "payout disabled in demo" };
@@ -1039,15 +1039,15 @@ export async function paypalPayout(amountUsd: number, paypalEmail: string) {
     return { ok: false, error: "invalid amountUsd" };
   }
 
-  // USD -> cents（浮動小数誤差対策で round）
+  // USD -> cents�E�浮動小数誤差対策で round�E�E
   const amountCents = Math.round(amtUsd * 100);
 
-  // 念のため（NaN/0防止）
+  // 念のため�E�EaN/0防止�E�E
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
     return { ok: false, error: "invalid amountCents" };
   }
 
-  // requestId（ブラウザ安全）
+  // requestId�E�ブラウザ安�E�E�E
   const requestId = makeRequestId();
 
   const r = await authenticatedFetch("/api/paypal/payout", {
@@ -1058,3 +1058,4 @@ export async function paypalPayout(amountUsd: number, paypalEmail: string) {
 
   return await r.json().catch(() => ({}));
 }
+

@@ -117,3 +117,4 @@ const notFound = route('*?', './__create/not-found.tsx');
 const routes = [...generateRoutes(tree), notFound];
 
 export default routes;
+

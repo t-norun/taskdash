@@ -11,7 +11,7 @@ export default function RefundedPanel({ refundedItems, fmtWhenShort, shortId }) 
     <div className="mt-5 grid grid-cols-1 gap-3">
       {items.map((it, idx) => {
         const id = (it && it.submissionId) || idx;
-        const price = it && it.priceUsd != null ? `$${Number(it.priceUsd).toFixed(2)}` : "—";
+        const price = it && it.priceUsd != null ? `$${Number(it.priceUsd).toFixed(2)}` : " E;
         const when = it && (it.createdAt || it.savedAt) ? fmtWhenShort(it.createdAt || it.savedAt) : "";
         const reason = (it && it.reason) || "refunded";
 
@@ -28,3 +28,4 @@ export default function RefundedPanel({ refundedItems, fmtWhenShort, shortId }) 
     </div>
   );
 }
+

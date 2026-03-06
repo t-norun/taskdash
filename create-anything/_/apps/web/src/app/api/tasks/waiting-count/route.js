@@ -3,7 +3,7 @@ import { authenticateUser } from "../../utils/auth";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
@@ -19,19 +19,19 @@ function forwardHeaders(request) {
   return h;
 }
 
-// v2の返却を { waitingCounts: { [priceUsd]: count } } に寄せる
+// v2の返却めE{ waitingCounts: { [priceUsd]: count } } に寁E��めE
 function normalizeWaitingCounts(data) {
-  // 期待例1: { waitingCounts: { "1": 2, "5": 0 } }
+  // 期征E��E: { waitingCounts: { "1": 2, "5": 0 } }
   if (data?.waitingCounts && typeof data.waitingCounts === "object") {
     return data.waitingCounts;
   }
 
-  // 期待例2: { countsByPrice: {...} }
+  // 期征E��E: { countsByPrice: {...} }
   if (data?.countsByPrice && typeof data.countsByPrice === "object") {
     return data.countsByPrice;
   }
 
-  // 期待例3: { items: [{ priceUsd: 1, waitingCount: 2 }, ...] }
+  // 期征E��E: { items: [{ priceUsd: 1, waitingCount: 2 }, ...] }
   const items = data?.items || data?.data || data;
   if (Array.isArray(items)) {
     const out = {};
@@ -51,7 +51,7 @@ export async function GET(request) {
   try {
     await authenticateUser(request);
 
-    // v2に「waiting-count」系がある想定で順に試す（無ければ {} に倒す）
+    // v2に「waiting-count」系がある想定で頁E��試す（無ければ {} に倒す�E�E
     const candidates = [
       `${V2_BASE}/tasks/waiting-count`,
       `${V2_BASE}/queue/waiting-count`,
@@ -72,7 +72,7 @@ export async function GET(request) {
 
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j?.ok === false) {
-        // 404以外の失敗は、その場で打ち切ってフォールバック
+        // 404以外�E失敗�E、その場で打ち刁E��てフォールバック
         break;
       }
 
@@ -83,7 +83,7 @@ export async function GET(request) {
       }
     }
 
-    // v2に無い/形が読めないなら、最短は空で返す（UIを壊さない）
+    // v2に無ぁE形が読めなぁE��ら、最短は空で返す�E�EIを壊さなぁE��E
     return Response.json({
       waitingCounts: data ?? {},
     });
@@ -95,4 +95,5 @@ export async function GET(request) {
     );
   }
 }
+
 

@@ -60,7 +60,7 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to verify code");
       }
 
-      console.log("✅ OTP verified, storing tokens...");
+      console.log("✁EOTP verified, storing tokens...");
 
       // Store JWT tokens
       localStorage.setItem("taskdash_access_token", data.accessToken);
@@ -68,7 +68,7 @@ export default function LoginPage() {
       localStorage.setItem("taskdash_refresh_token_id", data.refreshTokenId);
       localStorage.setItem("taskdash_user", JSON.stringify(data.user));
 
-      console.log("✅ Tokens stored successfully");
+      console.log("✁ETokens stored successfully");
       console.log(
         "Access token:",
         localStorage.getItem("taskdash_access_token")?.substring(0, 20) + "...",
@@ -76,7 +76,7 @@ export default function LoginPage() {
 
       // Wait a moment for localStorage to fully persist, then redirect
       setTimeout(() => {
-        console.log("✅ Redirecting to home page...");
+        console.log("✁ERedirecting to home page...");
         window.location.replace("/");
       }, 100);
     } catch (err) {
@@ -141,7 +141,7 @@ export default function LoginPage() {
                   onClick={() => setStep("email")}
                   className="text-[13px] text-[#2563FF] mb-4"
                 >
-                  ← Change email
+                  ↁEChange email
                 </button>
                 <p className="text-[13px] text-[#7A7A7A] mb-4">
                   Code sent to <strong>{email}</strong>
@@ -193,3 +193,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

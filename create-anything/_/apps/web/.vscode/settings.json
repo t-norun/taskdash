@@ -1,0 +1,17 @@
+﻿{
+  "typescript.tsserver.exclude": [
+    "**/.react-router/**"
+  ],
+  "javascript.tsserver.exclude": [
+    "**/.react-router/**"
+  ],
+  "files.watcherExclude": {
+    "**/.react-router/**": true
+  },
+  "search.exclude": {
+    "**/.react-router/**": true
+  },
+  "files.exclude": {
+    "**/.react-router/**": true
+  }
+}

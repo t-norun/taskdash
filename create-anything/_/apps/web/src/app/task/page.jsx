@@ -8,7 +8,7 @@ import { navigate } from "@/utils/navigation";
 /* ===============================
    authenticatedFetch
 ================================ */
-const API_HTTP = "http://localhost:3000";
+const API_HTTP = "https://api.taskdash.net";
 
 const authenticatedFetch = async (pathOrUrl, options = {}) => {
   if (typeof window === "undefined") return fetch(pathOrUrl, options);
@@ -65,7 +65,7 @@ export default function TaskPage() {
   const [phase, setPhase] = useState("loading");
   const [bootError, setBootError] = useState("");
 
-  // UI state（Balanceっぽい）
+  // UI state�E�EalanceっぽぁE��E
   const [selectedPick, setSelectedPick] = useState(null);
   const [showResetModal, setShowResetModal] = useState(false);
 
@@ -159,7 +159,7 @@ export default function TaskPage() {
   };
 
   /* ===============================
-     click-to-place (数字もcreate寄せ)
+     click-to-place (数字もcreate寁E��)
   ================================ */
   const onPickClick = (num) => {
     if (submitting) return;
@@ -178,7 +178,7 @@ export default function TaskPage() {
   const onReset = () => {
     setOrderedNumbers(Array(10).fill(null));
     setSelectedPick(null);
-    setStartTime(Date.now()); // 時間もリセット（公平）
+    setStartTime(Date.now()); // 時間もリセチE���E��E平�E�E
     setShowResetModal(false);
   };
 
@@ -236,7 +236,7 @@ export default function TaskPage() {
   );
 
   /* ===============================
-     UI (Balance完全移植)
+     UI (Balance完�E移椁E
   ================================ */
   if (phase === "loading" && !bootError) {
     return (
@@ -335,7 +335,7 @@ export default function TaskPage() {
               </div>
             </div>
 
-            {/* 状態表示（Balanceのトーン） */}
+            {/* 状態表示�E�Ealanceのト�Eン�E�E*/}
             <div className="text-right">
               {submitting ? (
                 <div className="text-[13px] font-semibold text-[#2563FF]">
@@ -353,7 +353,7 @@ export default function TaskPage() {
             </div>
           </div>
 
-          {/* Slots（Balanceのボタン規格で再現） */}
+          {/* Slots�E�Ealanceのボタン規格で再現�E�E*/}
           <div className="grid grid-cols-5 gap-2 mb-6">
             {orderedNumbers.map((num, i) => {
               const has = num != null;
@@ -384,7 +384,7 @@ export default function TaskPage() {
             })}
           </div>
 
-          {/* Picks（価格ボタンの見た目で完全一致方向） */}
+          {/* Picks�E�価格ボタンの見た目で完�E一致方向！E*/}
           <div className="mb-3">
             <div className="text-[14px] font-medium text-[#2B2B2B] mb-3">
               Numbers
@@ -430,7 +430,7 @@ export default function TaskPage() {
         </a>
       </div>
 
-      {/* Reset Modal（BalanceのAddFundsモーダル完全移植） */}
+      {/* Reset Modal�E�EalanceのAddFundsモーダル完�E移植！E*/}
       {showResetModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
@@ -464,5 +464,6 @@ export default function TaskPage() {
     </div>
   );
 }
+
 
 

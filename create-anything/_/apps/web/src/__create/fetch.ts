@@ -100,18 +100,18 @@ export const fetchWithHeaders = async (
 
 
   const finalHeaders = new Headers(finalInit.headers);
-  // JWTトークン自動付与
+  // JWTト�Eクン自動付丁E
   try {
     const token = typeof window !== 'undefined' ? localStorage.getItem('taskdash_access_token') : null;
-    // Content-Type自動付与
+    // Content-Type自動付丁E
     if (!finalHeaders.has('Content-Type') && !finalHeaders.has('content-type')) {
       finalHeaders.set('Content-Type', 'application/json');
     }
-    // Authorization自動付与
+    // Authorization自動付丁E
     if (token && !finalHeaders.has('Authorization') && !finalHeaders.has('authorization')) {
       finalHeaders.set('Authorization', 'Bearer ' + token);
     }
-    // /dev/系エンドポイントには x-dev-key 付与（JWTは絶対に入れない）
+    // /dev/系エンド�Eイントには x-dev-key 付与！EWTは絶対に入れなぁE��E
     if (url.includes('/dev/')) {
       const devKey = typeof window !== 'undefined'
         ? localStorage.getItem('taskdash_dev_key')
@@ -121,7 +121,7 @@ export const fetchWithHeaders = async (
       }
     }
   } catch (e) {
-    // localStorage未定義時は何もしない
+    // localStorage未定義時�E何もしなぁE
   }
   for (const [key, value] of Object.entries(additionalHeaders)) {
     if (value) finalHeaders.set(key, value);
@@ -166,3 +166,4 @@ export const fetchWithHeaders = async (
 };
 
 export default fetchWithHeaders;
+

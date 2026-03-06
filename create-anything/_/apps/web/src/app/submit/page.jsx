@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { navigate } from "@/utils/navigation";
 import { authenticatedFetch, isAuthenticated, getUser } from "@/utils/auth";
 
@@ -20,7 +20,6 @@ function loadPending() {
 
 export default function SubmitPage() {
   const [user, setUser] = useState(null);
-
   const [pending, setPending] = useState(null);
 
   const [balance, setBalance] = useState(0);
@@ -36,12 +35,14 @@ export default function SubmitPage() {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
 
-  // wallet一本化: availableから計算（maxStake/ticketsに統一）
+  // wallet一本化: availableから計算。maxStake / tickets 表示を統一
   const availableCents = Number(available ?? 0);
   const maxStake = Math.max(0, Math.floor(availableCents / 100));
-  const ticketsDisplay = maxStake; // 表示互換
+  const ticketsDisplay = maxStake;
   const canStake = maxStake >= 1;
-  const stakeDisabledReason = canStake ? null : "残高が $1 未満のため参加できません";
+  const stakeDisabledReason = canStake
+    ? null
+    : "残高が $1 未満のため参加できません";
 
   // ===== init =====
   useEffect(() => {
@@ -51,41 +52,45 @@ export default function SubmitPage() {
         navigate("/login");
         return;
       }
+
       const u = await Promise.resolve(getUser()).catch(() => null);
       if (u) setUser(u);
 
       const p = loadPending();
-        // ✅ pendingが無い/壊れてても「戻さない」
-        if (!p?.attemptId) {
-          // ✅ attemptId がクエリにあるなら results へ
-          const qs = new URLSearchParams(window.location.search);
-          const aid = qs.get("attemptId");
-          if (aid) {
-            window.location.href = `/results?attemptId=${encodeURIComponent(aid)}`;
-            return;
-          }
-          setPending(null);
-          return;
-        }
-        if (!Array.isArray(p?.orderedNumbers)) {
-          setPending(null);
-          return;
-        }
 
-        // ✅ timeMs は 0 でもOK（Numberでチェック）
-        const tm = Number(p?.timeMs);
-        if (!Number.isFinite(tm)) {
-          setPending(null);
+      // pending が無い / 壊れている場合は戻さない
+      if (!p?.attemptId) {
+        // attemptId がクエリにあるなら results へ
+        const qs = new URLSearchParams(window.location.search);
+        const aid = qs.get("attemptId");
+        if (aid) {
+          window.location.href = `/results?attemptId=${encodeURIComponent(aid)}`;
           return;
         }
+        setPending(null);
+        return;
+      }
 
-        setPending({ ...p, timeMs: tm });
+      if (!Array.isArray(p?.orderedNumbers)) {
+        setPending(null);
+        return;
+      }
+
+      // timeMs は 0 でもOK。number かだけ確認
+      const tm = Number(p?.timeMs);
+      if (!Number.isFinite(tm)) {
+        setPending(null);
+        return;
+      }
+
+      setPending({ ...p, timeMs: tm });
     })();
   }, []);
 
   // ===== balance =====
   useEffect(() => {
     if (!pending) return;
+
     (async () => {
       setLoadingBalance(true);
       setErr("");
@@ -93,6 +98,7 @@ export default function SubmitPage() {
         const r = await authenticatedFetch("/api/user/balance");
         const j = await r.json();
         if (!j?.ok) throw new Error(j?.error || "balance failed");
+
         setBalance(Number(j.balance ?? 0));
         setReserved(Number(j.reserved ?? 0));
         setAvailable(Number(j.available ?? 0));
@@ -108,10 +114,12 @@ export default function SubmitPage() {
   // maxStakeに合わせて stakeTickets を矯正
   useEffect(() => {
     if (!pending) return;
+
     if (maxStake <= 0) {
       setStakeTickets(0);
       return;
     }
+
     setStakeTickets((v) => {
       const n = Number(v || 1);
       if (n < 1) return 1;
@@ -123,6 +131,7 @@ export default function SubmitPage() {
   async function reloadMarket() {
     setLoadingMarket(true);
     setErr("");
+
     try {
       const r = await authenticatedFetch("/api/tasks/market");
       const j = await r.json();
@@ -138,6 +147,7 @@ export default function SubmitPage() {
   // ===== market poll =====
   useEffect(() => {
     if (!pending) return;
+
     reloadMarket();
     const t = setInterval(reloadMarket, 2000);
     return () => clearInterval(t);
@@ -147,15 +157,16 @@ export default function SubmitPage() {
     if (!pending) return;
     if (submitting) return;
 
-    // stakeTickets = USD として扱う（1 ticket = $1）
+    // stakeTickets = USD として扱う。1 ticket = $1
     const stakeUsd = Math.floor(Number(stakeTickets ?? 0));
 
     if (!Number.isFinite(stakeUsd) || stakeUsd < 1) {
-      alert("チケット枚数を選んでください（1以上）");
+      alert("チケット枚数を選んでください");
       return;
     }
+
     if (stakeUsd > maxStake) {
-      alert("所持チケットを超えています");
+      alert("所持チケット数を超えています");
       return;
     }
 
@@ -163,19 +174,18 @@ export default function SubmitPage() {
     setErr("");
 
     try {
-      // v2 submit の仕様:
-      // stakeUsd のとき N = stakeUsd になる（$1 => 1, $3 => 3）
+      // v2 submit の仕様
+      // stakeUsd のとき N = stakeUsd になる想定
       const N = stakeUsd;
 
-      // ひとまず通すためのダミー（あとで本物の採点に置き換えればOK）
-      // まずは「invalid_stakeUsd / length_mismatch」を確実に潰す目的
+      // ダミー採点
       const scores = Array.from({ length: N }, () => 80);
       const timesMs = Array.from({ length: N }, () =>
         Math.max(1, Math.trunc(Number(pending?.timeMs ?? 1500)))
       );
 
       const body = {
-        attemptId: pending.attemptId, // ✅ 追加
+        attemptId: pending.attemptId,
         stakeUsd,
         taskId: pending?.taskId ?? "dev-task",
         scores,
@@ -188,7 +198,6 @@ export default function SubmitPage() {
         body: JSON.stringify(body),
       });
 
-      // authenticatedFetch が fetch を返す実装ならこれでOK
       const j = typeof res?.json === "function" ? await res.json() : res;
 
       if (!j?.ok) throw new Error(j?.error || "submit failed");
@@ -199,20 +208,22 @@ export default function SubmitPage() {
         localStorage.removeItem(PENDING_KEY);
       } catch {}
 
-      // ✅ waiting をホーム側に引き継ぐ（check-match が lastSubmissionId を見て動く前提）
+      // waiting をホーム側に引き継ぐ
       const sid = j.submissionId || body.attemptId;
       if (sid) {
-        localStorage.setItem("pendingSubmission", JSON.stringify({
-          attemptId: sid,
-          taskId: body.taskId,
-          orderedNumbers: pending.orderedNumbers,
-          timeMs: pending.timeMs,
-        }));
+        localStorage.setItem(
+          "pendingSubmission",
+          JSON.stringify({
+            attemptId: sid,
+            taskId: body.taskId,
+            orderedNumbers: pending.orderedNumbers,
+            timeMs: pending.timeMs,
+          })
+        );
         localStorage.setItem("lastSubmissionId", sid);
         localStorage.setItem("taskdash_v2_submissionId", sid);
       }
 
-      // ✅ 成功したら問答無用でホームへ戻す（戻らない問題を物理的に潰す）
       window.location.href = "/";
       return;
     } catch (e) {
@@ -221,13 +232,12 @@ export default function SubmitPage() {
     }
   }
 
-
   if (!pending) {
     return (
       <div style={{ padding: 16, maxWidth: 720, margin: "0 auto" }}>
         <h1 style={{ fontSize: 24, fontWeight: 800 }}>Submit</h1>
         <p style={{ marginTop: 12 }}>
-          pendingSubmission がありません（すでに提出済み or 別タブ/別遷移で飛んできた可能性）
+          pendingSubmission がありません。すでに提出済みか、別タブ・別遷移で開いた可能性があります。
         </p>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button
@@ -245,15 +255,31 @@ export default function SubmitPage() {
     <div style={{ padding: 16, maxWidth: 720, margin: "0 auto" }}>
       <h1 style={{ fontSize: 24, fontWeight: 800 }}>Submit</h1>
 
-      <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>今回の結果（ローカル保存済み）</div>
+      <div
+        style={{
+          marginTop: 12,
+          padding: 12,
+          border: "1px solid #ddd",
+          borderRadius: 12,
+        }}
+      >
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>
+          今回の結果（ローカル保存済み）
+        </div>
         <div>Time: {(Number(pending.timeMs) / 1000).toFixed(3)}s</div>
         <div style={{ opacity: 0.7, fontSize: 12, marginTop: 6 }}>
           attemptId: {pending.attemptId}
         </div>
       </div>
 
-      <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
+      <div
+        style={{
+          marginTop: 12,
+          padding: 12,
+          border: "1px solid #ddd",
+          borderRadius: 12,
+        }}
+      >
         <div style={{ fontWeight: 800, marginBottom: 6 }}>チケット残高</div>
         {loadingBalance ? (
           <div>Loading...</div>
@@ -261,7 +287,9 @@ export default function SubmitPage() {
           <>
             <div>Balance: {formatUsdFromCents(balance)}</div>
             <div>Reserved: {formatUsdFromCents(reserved)}</div>
-            <div style={{ fontWeight: 800 }}>Available: {formatUsdFromCents(available)}</div>
+            <div style={{ fontWeight: 800 }}>
+              Available: {formatUsdFromCents(available)}
+            </div>
             <div style={{ marginTop: 6, opacity: 0.8 }}>
               Tickets: <b>{ticketsDisplay}</b> / Max stake: <b>{maxStake}</b>
             </div>
@@ -269,14 +297,32 @@ export default function SubmitPage() {
         )}
       </div>
 
-      <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>今回出す枚数（Stake）</div>
+      <div
+        style={{
+          marginTop: 12,
+          padding: 12,
+          border: "1px solid #ddd",
+          borderRadius: 12,
+        }}
+      >
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>
+          今回出す枚数（stake）
+        </div>
 
         {!canStake ? (
-          <div style={{ marginTop: 8, color: "tomato" }}>{stakeDisabledReason}</div>
+          <div style={{ marginTop: 8, color: "tomato" }}>
+            {stakeDisabledReason}
+          </div>
         ) : (
           <>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
               {[1, 2, 3, 5, 10].map((n) => (
                 <button
                   key={n}
@@ -295,13 +341,19 @@ export default function SubmitPage() {
               ))}
 
               <span style={{ marginLeft: 8, opacity: 0.7 }}>custom:</span>
+
               <input
                 type="number"
                 min={1}
                 max={maxStake}
                 value={stakeTickets}
                 onChange={(e) => setStakeTickets(Number(e.target.value || 1))}
-                style={{ width: 110, padding: 8, borderRadius: 10, border: "1px solid #ccc" }}
+                style={{
+                  width: 110,
+                  padding: 8,
+                  borderRadius: 10,
+                  border: "1px solid #ccc",
+                }}
               />
             </div>
 
@@ -312,9 +364,22 @@ export default function SubmitPage() {
         )}
       </div>
 
-      <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: 800 }}>市場（匿名・待機数）</div>
+      <div
+        style={{
+          marginTop: 12,
+          padding: 12,
+          border: "1px solid #ddd",
+          borderRadius: 12,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontWeight: 800 }}>市場（匿名の待機数）</div>
           <button
             onClick={reloadMarket}
             style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #ccc" }}
@@ -339,8 +404,10 @@ export default function SubmitPage() {
                   borderBottom: "1px dashed #eee",
                 }}
               >
-                <div>{b.stakeUsd} ticket{b.stakeUsd === 1 ? "" : "s"}</div>
-                <div>— waiting {b.waiting}</div>
+                <div>
+                  {b?.stakeUsd} ticket{b?.stakeUsd === 1 ? "" : "s"}
+                </div>
+                <div>waiting: {b?.waiting ?? 0}</div>
               </div>
             ))}
           </div>
@@ -348,12 +415,16 @@ export default function SubmitPage() {
       </div>
 
       {err ? (
-        <div style={{ marginTop: 12, color: "crimson", whiteSpace: "pre-wrap" }}>{err}</div>
+        <div style={{ marginTop: 12, color: "crimson", whiteSpace: "pre-wrap" }}>
+          {err}
+        </div>
       ) : null}
 
       <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
         <button
-          onClick={() => (window.location.href = "/")}
+          onClick={() => {
+            window.location.href = "/";
+          }}
           style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", flex: 1 }}
           disabled={submitting}
         >
@@ -382,4 +453,3 @@ export default function SubmitPage() {
     </div>
   );
 }
-

@@ -24,13 +24,13 @@ export default function PayPalSuccessPage() {
     );
 
     if (!token) {
-      console.error("❌ No token found in URL");
+      console.error("❁ENo token found in URL");
       setStatus("error");
       setMessage("Invalid payment link - no token found");
       return;
     }
 
-    console.log(`✅ Token found: ${token}, starting capture...`);
+    console.log(`✁EToken found: ${token}, starting capture...`);
     capturePayment(token);
   }, []);
 
@@ -55,7 +55,7 @@ export default function PayPalSuccessPage() {
         throw new Error(data.error || "Failed to capture payment");
       }
 
-      console.log(`✅ Capture successful! Amount: $${data.amount}`);
+      console.log(`✁ECapture successful! Amount: $${data.amount}`);
       setStatus("success");
       setAmount(data.amount);
       setMessage(`$${data.amount.toFixed(2)} has been added to your balance!`);
@@ -74,7 +74,7 @@ export default function PayPalSuccessPage() {
 
       // Redirect to home after 3 seconds
       setTimeout(() => {
-        console.log("➡️ Redirecting to dashboard...");
+        console.log("➡�E�ERedirecting to dashboard...");
         if (window.opener && !window.opener.closed) {
           // If opened in new tab, close this tab and focus parent
           window.opener.focus();
@@ -85,7 +85,7 @@ export default function PayPalSuccessPage() {
         }
       }, 2000);
     } catch (error) {
-      console.error("❌ Capture error:", error);
+      console.error("❁ECapture error:", error);
       setStatus("error");
       setMessage(error.message);
     }
@@ -146,3 +146,4 @@ export default function PayPalSuccessPage() {
     </div>
   );
 }
+

@@ -3,7 +3,7 @@ import { authenticateUser } from "../../utils/auth";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
@@ -25,14 +25,14 @@ function num(x) {
 }
 
 function computeFromWallets(payload) {
-  // v2が { wallets: [...] } か { userWallet, escrowWallet, ... } かを吸収
+  // v2ぁE{ wallets: [...] } ぁE{ userWallet, escrowWallet, ... } かを吸叁E
   const wallets = Array.isArray(payload?.wallets)
     ? payload.wallets
     : Array.isArray(payload)
       ? payload
       : null;
 
-  // 直接 balance/reserved があるなら最優先で使う
+  // 直接 balance/reserved があるなら最優先で使ぁE
   const directBalance =
     num(payload?.balance) ??
     num(payload?.available) ??
@@ -47,7 +47,7 @@ function computeFromWallets(payload) {
   if (directBalance !== null) {
     const reserved = directReserved ?? 0;
     return {
-      balance: directBalance + reserved, // balance=total の定義が違う場合に備えて一応整える
+      balance: directBalance + reserved, // balance=total の定義が違ぁE��合に備えて一応整える
       reserved,
       available: directBalance,
     };
@@ -55,15 +55,15 @@ function computeFromWallets(payload) {
 
   if (!wallets) return null;
 
-  // wallet.type 例: USER / ESCROW / PLATFORM
+  // wallet.type 侁E USER / ESCROW / PLATFORM
   const user = wallets.find((w) => String(w.type).toUpperCase() === "USER");
   const escrow = wallets.find((w) => String(w.type).toUpperCase() === "ESCROW");
 
   const userBal = num(user?.balance) ?? 0;
 
-  // create-anythingの reserved は「自分の拘束分」の概念。
-  // v2のESCROWは“全体”で持ってる可能性があるので、ここで reserved に入れるのは危険。
-  // 最短は reserved=0 にして、available=userBal に寄せる。
+  // create-anythingの reserved は「�E刁E�E拘束刁E���E概念、E
+  // v2のESCROWは“�E体”で持ってる可能性がある�Eで、ここで reserved に入れるのは危険、E
+  // 最短は reserved=0 にして、available=userBal に寁E��る、E
   const reserved = 0;
 
   return {
@@ -75,15 +75,15 @@ function computeFromWallets(payload) {
 
 export async function GET(request) {
   try {
-    // create-anything側の認証は維持（JWT/OTPのまま）
+    // create-anything側の認証は維持E��EWT/OTPのまま�E�E
     const user = await authenticateUser(request);
 
     // v2で userId を要求するAPIがある場合に備えて渡せるようにする
     const userId = String(user.id);
 
-    // v2残高API候補（404なら次へ）
+    // v2残高API候補！E04なら次へ�E�E
     const candidates = [
-      // もし v2 が「自分の残高」系を持ってる
+      // もし v2 が「�E刁E�E残高」系を持ってめE
       `${V2_BASE}/me/balance`,
       `${V2_BASE}/user/balance`,
       `${V2_BASE}/wallet/balance`,
@@ -92,7 +92,7 @@ export async function GET(request) {
       `${V2_BASE}/wallets/me`,
       // userId クエリで取る系
       `${V2_BASE}/wallets/by-user?userId=${encodeURIComponent(userId)}`,
-      `${V2_BASE}/dev/wallets/by-user?userId=${encodeURIComponent(userId)}`, // dev しか無い場合の逃げ
+      `${V2_BASE}/dev/wallets/by-user?userId=${encodeURIComponent(userId)}`, // dev しか無ぁE��合�E送E��
     ];
 
     let lastNon404 = null;
@@ -119,8 +119,8 @@ export async function GET(request) {
       }
     }
 
-    // v2から取れない時でも、UIを壊さないために「今の認証情報の残高」を返しておく（ただし将来ズレる）
-    // ここは “最短で動かす保険”。v2に残高APIが用意できたら、このフォールバックは消してOK。
+    // v2から取れなぁE��でも、UIを壊さなぁE��めに「今�E認証惁E��の残高」を返しておく�E�ただし封E��ズレる！E
+    // ここは “最短で動かす保険”。v2に残高APIが用意できたら、このフォールバックは消してOK、E
     const totalBalance = Number(user.balance) || 0;
     const reservedBalance = Number(user.reserved_balance || 0) || 0;
     const availableBalance = totalBalance - reservedBalance;
@@ -139,4 +139,5 @@ export async function GET(request) {
     );
   }
 }
+
 

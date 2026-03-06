@@ -4,7 +4,7 @@ import { authenticateUser } from "../../utils/auth";
 const V2_BASE =
   process.env.V2_API_BASE_URL ||
   process.env.NEXT_PUBLIC_V2_API_BASE_URL ||
-  "http://localhost:3000";
+  "https://api.taskdash.net";
 
 function forwardHeaders(request) {
   const h = new Headers();
@@ -27,7 +27,7 @@ export async function POST(request) {
 
     const { priceUsd } = await request.json();
 
-    // ---- legacy側のガード（UI/導線を壊さない最小）----
+    // ---- legacy側のガード！EI/導線を壊さなぁE��小！E---
     const p = Number(priceUsd);
     if (!Number.isFinite(p) || p < 1 || p > 100) {
       return Response.json({ error: "Invalid price" }, { status: 400 });
@@ -50,7 +50,7 @@ export async function POST(request) {
       );
     }
 
-    // 連打防止（必要なら維持。不要なら丸ごと削ってOK）
+    // 連打防止�E�忁E��なら維持。不要なら丸ごと削ってOK�E�E
     const recentSubmission = await sql`
       SELECT * FROM submissions
       WHERE user_id = ${user.id}
@@ -65,11 +65,11 @@ export async function POST(request) {
       );
     }
 
-    // ---- v2へ転送：ゲーム開始は v2 core に任せる ----
-    // create-anything の user.id を v2 の userId として使う（基本これが最短）
+    // ---- v2へ転送E��ゲーム開始�E v2 core に任せる ----
+    // create-anything の user.id めEv2 の userId として使ぁE��基本これが最短�E�E
     const entryTxId = crypto.randomUUID();
 
-    // v2が受け取れる可能性のある追加情報も送る（無視されても害はない）
+    // v2が受け取れる可能性のある追加惁E��も送る�E�無視されても害はなぁE��E
     const body = {
       userId: String(user.id),
       entryTxId,
@@ -87,33 +87,33 @@ export async function POST(request) {
     const data = await v2res.json().catch(() => ({}));
 
     if (!v2res.ok || data?.ok === false) {
-      // v2のエラーをそのまま返す（デバッグしやすい）
+      // v2のエラーをそのまま返す�E�デバッグしやすい�E�E
       return Response.json(
         { error: data?.error || "Failed to accept job (v2)" , debug: data?.debug },
         { status: v2res.status || 500 },
       );
     }
 
-    // v2の返却から numbers を拾う（型が多少違っても吸収）
+    // v2の返却から numbers を拾ぁE��型が多少違っても吸収！E
     const attempt = data.attempt || data.data || data;
     const numbers = attempt?.numbers || attempt?.task?.numbers || data?.numbers;
 
     if (!numbers) {
-      // numbers が無いとUIが詰むので、v2返却形が違う場合はここで気付けるようにする
+      // numbers が無ぁE��UIが詰むので、v2返却形が違ぁE��合�Eここで気付けるよぁE��する
       return Response.json(
         { error: "v2 response missing numbers", debug: data },
         { status: 502 },
       );
     }
 
-    // create-anything 期待形に合わせて返す
-    // taskSetId は legacyの task_sets.id 相当だが、ここでは attemptId を入れてUIを動かす（最短）
+    // create-anything 期征E��に合わせて返す
+    // taskSetId は legacyの task_sets.id 相当だが、ここでは attemptId を�EれてUIを動かす�E�最短�E�E
     return Response.json({
       success: true,
       taskSetId: attempt?.id || data?.attemptId || entryTxId,
       numbers,
       priceUsd: p,
-      // もしフロントが attemptId を別で欲しそうなら、ここで明示的に出しておくと後が楽
+      // もしフロントが attemptId を別で欲しそぁE��ら、ここで明示皁E��出しておくと後が楽
       attemptId: attempt?.id || data?.attemptId,
     });
   } catch (error) {
@@ -124,3 +124,4 @@ export async function POST(request) {
     );
   }
 }
+

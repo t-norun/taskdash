@@ -69,7 +69,7 @@ export default function AdminPlatformBalance({ getPlatformBalance }) {
           <>
             <div className="text-[12px] text-[#7A7A7A] mb-1">Current</div>
             <div className="text-[32px] font-semibold text-[#2B2B2B]">
-              {balanceUsd == null ? "—" : `$${Number(balanceUsd).toFixed(2)}`}
+              {balanceUsd == null ? " E : `$${Number(balanceUsd).toFixed(2)}`}
             </div>
             <div className="mt-2 text-[12px] text-[#9CA3AF]">
               {updatedAt ? `Last updated: ${new Date(updatedAt).toLocaleString()}` : null}
@@ -80,3 +80,4 @@ export default function AdminPlatformBalance({ getPlatformBalance }) {
     </div>
   );
 }
+

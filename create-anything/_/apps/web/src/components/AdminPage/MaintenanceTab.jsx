@@ -42,7 +42,7 @@ export function MaintenanceTab() {
               </div>
             ) : (
               <div className="text-[14px] text-[#059669]">
-                ✅ {cleanupResult.message}
+                ✁E{cleanupResult.message}
                 <br />
                 Cleaned: {cleanupResult.cleaned} submissions
               </div>
@@ -73,3 +73,4 @@ export function MaintenanceTab() {
     </div>
   );
 }
+

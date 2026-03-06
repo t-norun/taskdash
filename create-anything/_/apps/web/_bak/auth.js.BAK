@@ -1,0 +1,17 @@
+import 'virtual:console-to-parent';
+import sql from "./sql";
+import { extractBearerToken, verifyAccessToken } from "./jwt";
+
+/**
+ * auth utils
+ */
+export function authenticateUser(request) {
+  const token = extractBearerToken(request);
+  if (!token) return null;
+  return verifyAccessToken(token);
+}
+
+  console.log("✅ Server: User authenticated successfully:", users[0].email);
+
+  return users[0];
+}

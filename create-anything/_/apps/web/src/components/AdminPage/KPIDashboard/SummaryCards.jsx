@@ -21,3 +21,4 @@ export function SummaryCards({ cards }) {
     </div>
   );
 }
+
