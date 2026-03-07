@@ -1,29 +1,11 @@
 ﻿"use client";
-console.log("🚀 THIS page.jsx IS LOADED 🚀");
+
+console.log("🚀 TASK page.jsx IS LOADED 🚀");
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, RefreshCw, BookOpen } from "lucide-react";
 import { navigate } from "@/utils/navigation";
-
-/* ===============================
-   authenticatedFetch
-================================ */
-const API_HTTP = "https://api.taskdash.net";
-
-const authenticatedFetch = async (pathOrUrl, options = {}) => {
-  if (typeof window === "undefined") return fetch(pathOrUrl, options);
-
-  const token = localStorage.getItem("taskdash_access_token") || "";
-  const headers = new Headers(options.headers || {});
-  if (token) headers.set("Authorization", "Bearer " + token);
-
-  const url =
-    typeof pathOrUrl === "string" && pathOrUrl.startsWith("/api/")
-      ? `${API_HTTP}${pathOrUrl}`
-      : pathOrUrl;
-
-  return fetch(url, { ...options, headers });
-};
+import { authenticatedFetch, getAccessToken } from "@/utils/auth";
 
 /* ===============================
    helpers
@@ -56,7 +38,6 @@ const getAttemptIdFromSubmit = (data, fallbackAttemptId) =>
 ================================ */
 export default function TaskPage() {
   const [attemptId, setAttemptId] = useState(null);
-
   const [numbers, setNumbers] = useState([]);
   const [orderedNumbers, setOrderedNumbers] = useState(Array(10).fill(null));
 
@@ -65,37 +46,47 @@ export default function TaskPage() {
   const [phase, setPhase] = useState("loading");
   const [bootError, setBootError] = useState("");
 
-  // UI state（Balanceっぽい）
   const [selectedPick, setSelectedPick] = useState(null);
   const [showResetModal, setShowResetModal] = useState(false);
 
   const startedRef = useRef(false);
   const draggedIndexRef = useRef(null);
 
-  /* ===============================
-     price (client only)
-  ================================ */
   const [price, setPrice] = useState(1);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const p = Number(new URLSearchParams(window.location.search).get("price") || "1");
+    const p = Number(
+      new URLSearchParams(window.location.search).get("price") || "1"
+    );
     setPrice(toNum(p, 1));
   }, []);
 
   /* ===============================
      start task
   ================================ */
-  const startTask = async () => {
+  const startTask = async (forcedPrice) => {
     setBootError("");
     setPhase("loading");
+
+    const token = getAccessToken();
+    if (!token) {
+      throw new Error("missing taskdash_access_token");
+    }
+
+    const actualPrice = toNum(
+      forcedPrice != null ? forcedPrice : price,
+      1
+    );
 
     const r = await authenticatedFetch("/api/tasks/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ price }),
+      body: JSON.stringify({ price: actualPrice }),
     });
 
     const data = await r.json().catch(() => ({}));
+
     if (!r.ok || data?.ok === false) {
       throw new Error(data?.error || "start failed");
     }
@@ -110,27 +101,39 @@ export default function TaskPage() {
     setNumbers(nums);
     setOrderedNumbers(Array(10).fill(null));
     setSelectedPick(null);
-
     setStartTime(Date.now());
     setPhase("task");
   };
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     if (startedRef.current) return;
     startedRef.current = true;
 
+    const p = Number(
+      new URLSearchParams(window.location.search).get("price") || "1"
+    );
+    const nextPrice = toNum(p, 1);
+    setPrice(nextPrice);
+
     (async () => {
       try {
-        await startTask();
+        const token = getAccessToken();
+        if (!token) {
+          navigate(`/login?redirect=${encodeURIComponent(`/task?price=${nextPrice}`)}`);
+          return;
+        }
+
+        await startTask(nextPrice);
       } catch (e) {
         const msg = e?.message ? e.message : String(e);
-        console.error("START_ERROR=", msg);
+        console.error("START_ERROR =", msg);
         setBootError(msg);
         setPhase("loading");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [price]);
+  }, []);
 
   /* ===============================
      drag & drop
@@ -154,12 +157,11 @@ export default function TaskPage() {
     next[targetIndex] = picked;
     setOrderedNumbers(next);
     setSelectedPick(null);
-
     draggedIndexRef.current = null;
   };
 
   /* ===============================
-     click-to-place (数字もcreate寄せ)
+     click-to-place
   ================================ */
   const onPickClick = (num) => {
     if (submitting) return;
@@ -178,7 +180,7 @@ export default function TaskPage() {
   const onReset = () => {
     setOrderedNumbers(Array(10).fill(null));
     setSelectedPick(null);
-    setStartTime(Date.now()); // 時間もリセット（公平）
+    setStartTime(Date.now());
     setShowResetModal(false);
   };
 
@@ -195,6 +197,11 @@ export default function TaskPage() {
     (async () => {
       try {
         setSubmitting(true);
+
+        const token = getAccessToken();
+        if (!token) {
+          throw new Error("missing taskdash_access_token");
+        }
 
         const timeMs = Math.max(0, Date.now() - startTime);
         const answer = orderedNumbers.map((n) => Number(n));
@@ -213,6 +220,7 @@ export default function TaskPage() {
         });
 
         const data = await r.json().catch(() => ({}));
+
         if (!r.ok || data?.ok === false) {
           throw new Error(data?.error || "submit failed");
         }
@@ -236,7 +244,7 @@ export default function TaskPage() {
   );
 
   /* ===============================
-     UI (Balance完全移植)
+     UI
   ================================ */
   if (phase === "loading" && !bootError) {
     return (
@@ -250,8 +258,12 @@ export default function TaskPage() {
     return (
       <div className="min-h-screen bg-white font-inter flex items-center justify-center p-6">
         <div className="max-w-[720px] w-full border border-[#F1F1F1] rounded-xl p-6">
-          <div className="text-[16px] font-semibold text-[#2B2B2B] mb-2">Error</div>
-          <pre className="text-[12px] text-[#C33] whitespace-pre-wrap">{bootError}</pre>
+          <div className="text-[16px] font-semibold text-[#2B2B2B] mb-2">
+            Error
+          </div>
+          <pre className="text-[12px] text-[#C33] whitespace-pre-wrap">
+            {bootError}
+          </pre>
 
           <div className="mt-4 flex gap-3">
             <button
@@ -266,7 +278,12 @@ export default function TaskPage() {
                   setBootError("");
                   await startTask();
                 } catch (e) {
-                  setBootError(e?.message ?? String(e));
+                  const msg = e?.message ?? String(e);
+                  if (msg.includes("missing taskdash_access_token")) {
+                    navigate(`/login?redirect=${encodeURIComponent(`/task?price=${price}`)}`);
+                    return;
+                  }
+                  setBootError(msg);
                 }
               }}
               className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
@@ -279,16 +296,14 @@ export default function TaskPage() {
     );
   }
 
-  // phase === "task"
   return (
     <div className="min-h-screen bg-white font-inter">
-      {/* Top bar (Balanceと同じ) */}
       <div className="border-b border-[#EDEDED]">
         <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
+            <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full" />
             <span className="text-[16px] font-semibold text-[#2B2B2B]">
-              Task Dash (DEV)
+              Task Dash
             </span>
           </div>
 
@@ -314,16 +329,20 @@ export default function TaskPage() {
       </div>
 
       <div className="max-w-[800px] mx-auto px-6 py-8">
-        {/* Main card (Balanceと同じ) */}
         <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 mb-6">
           <div className="flex items-start justify-between gap-6 mb-6">
             <div className="flex-1">
-              <div className="text-[13px] text-[#7A7A7A] mb-1">Arrange Numbers</div>
+              <div className="text-[13px] text-[#7A7A7A] mb-1">
+                Arrange Numbers
+              </div>
               <div className="text-[24px] font-semibold text-[#2B2B2B]">
                 Fill all 10 slots
               </div>
               <div className="text-[12px] text-[#7A7A7A] mt-1">
-                Price: <span className="font-semibold text-[#2B2B2B]">${toNum(price, 1)}</span>{" "}
+                Price:{" "}
+                <span className="font-semibold text-[#2B2B2B]">
+                  ${toNum(price, 1)}
+                </span>{" "}
                 · Progress:{" "}
                 <span className="font-semibold text-[#2B2B2B]">
                   {filledCount}/10
@@ -335,7 +354,6 @@ export default function TaskPage() {
               </div>
             </div>
 
-            {/* 状態表示（Balanceのトーン） */}
             <div className="text-right">
               {submitting ? (
                 <div className="text-[13px] font-semibold text-[#2563FF]">
@@ -353,7 +371,6 @@ export default function TaskPage() {
             </div>
           </div>
 
-          {/* Slots（Balanceのボタン規格で再現） */}
           <div className="grid grid-cols-5 gap-2 mb-6">
             {orderedNumbers.map((num, i) => {
               const has = num != null;
@@ -376,7 +393,9 @@ export default function TaskPage() {
                   {has ? num : i + 1}
                   {!has && (
                     <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#9B9B9B] rounded-full flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-white">{i + 1}</span>
+                      <span className="text-[10px] font-bold text-white">
+                        {i + 1}
+                      </span>
                     </div>
                   )}
                 </button>
@@ -384,7 +403,6 @@ export default function TaskPage() {
             })}
           </div>
 
-          {/* Picks（価格ボタンの見た目で完全一致方向） */}
           <div className="mb-3">
             <div className="text-[14px] font-medium text-[#2B2B2B] mb-3">
               Numbers
@@ -408,7 +426,10 @@ export default function TaskPage() {
                     } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
                     <span className="inline-flex items-center justify-center gap-2">
-                      <GripVertical size={14} className={active ? "opacity-80" : "opacity-50"} />
+                      <GripVertical
+                        size={14}
+                        className={active ? "opacity-80" : "opacity-50"}
+                      />
                       {num}
                     </span>
                   </button>
@@ -418,7 +439,7 @@ export default function TaskPage() {
           </div>
 
           <p className="text-[12px] text-[#7A7A7A] mt-4">
-            Tip: Drag & drop also works. (UI is aligned to Balance page)
+            Tip: Drag &amp; drop also works.
           </p>
         </div>
 
@@ -430,7 +451,6 @@ export default function TaskPage() {
         </a>
       </div>
 
-      {/* Reset Modal（BalanceのAddFundsモーダル完全移植） */}
       {showResetModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
@@ -464,5 +484,3 @@ export default function TaskPage() {
     </div>
   );
 }
-
-

@@ -1,8 +1,11 @@
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://taskdash-api.onrender.com";
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { saveAuthSession } from "@/utils/auth";
+
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL || "https://api.taskdash.net"
+).replace(/\/+$/, "");
 
 export default function LoginPage() {
   const [step, setStep] = useState("email");
@@ -11,8 +14,16 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const redirectTo = useMemo(() => {
+    if (typeof window === "undefined") return "/";
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get("redirect") || "/";
+  }, []);
+
   const handleSendOTP = async (e) => {
     e.preventDefault();
+    if (loading) return;
+
     setError("");
     setLoading(true);
 
@@ -20,23 +31,22 @@ export default function LoginPage() {
       const response = await fetch(`${API_BASE}/api/jwt/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: String(email || "").trim() }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to send code");
+        throw new Error(data?.error || "Failed to send code");
       }
 
-      // Development mode: log the code to console only
-      if (data.devCode) {
-        console.log(`🔐 Development OTP Code: ${data.devCode}`);
+      if (data?.devCode) {
+        console.log("Development OTP Code:", data.devCode);
       }
 
       setStep("otp");
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || String(err));
     } finally {
       setLoading(false);
     }
@@ -44,6 +54,8 @@ export default function LoginPage() {
 
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
+    if (loading) return;
+
     setError("");
     setLoading(true);
 
@@ -51,36 +63,42 @@ export default function LoginPage() {
       const response = await fetch(`${API_BASE}/api/jwt/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: otp }),
+        body: JSON.stringify({
+          email: String(email || "").trim(),
+          code: String(otp || "").trim(),
+        }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to verify code");
+        throw new Error(data?.error || "Failed to verify code");
       }
 
-      console.log("✁EOTP verified, storing tokens...");
+      if (!data?.accessToken) {
+        throw new Error("verify-otp succeeded but accessToken is missing");
+      }
 
-      // Store JWT tokens
-      localStorage.setItem("taskdash_access_token", data.accessToken);
-      localStorage.setItem("taskdash_refresh_token", data.refreshToken);
-      localStorage.setItem("taskdash_refresh_token_id", data.refreshTokenId);
-      localStorage.setItem("taskdash_user", JSON.stringify(data.user));
+      saveAuthSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        refreshTokenId: data.refreshTokenId,
+        user: data.user,
+      });
 
-      console.log("✁ETokens stored successfully");
+      console.log("LOGIN OK");
       console.log(
-        "Access token:",
-        localStorage.getItem("taskdash_access_token")?.substring(0, 20) + "...",
+        "taskdash_access_token exists =",
+        !!localStorage.getItem("taskdash_access_token")
+      );
+      console.log(
+        "stored access token preview =",
+        (localStorage.getItem("taskdash_access_token") || "").slice(0, 20) + "..."
       );
 
-      // Wait a moment for localStorage to fully persist, then redirect
-      setTimeout(() => {
-        console.log("✁ERedirecting to home page...");
-        window.location.replace("/");
-      }, 100);
+      window.location.replace(redirectTo);
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || String(err));
       setLoading(false);
     }
   };
@@ -89,7 +107,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-white font-inter flex items-center justify-center p-4">
       <div className="w-full max-w-[400px]">
         <div className="text-center mb-8">
-          <div className="w-12 h-12 border-4 border-[#2563FF] rounded-full mx-auto mb-4"></div>
+          <div className="w-12 h-12 border-4 border-[#2563FF] rounded-full mx-auto mb-4" />
           <h1 className="text-[24px] font-semibold text-[#2B2B2B] mb-2">
             Task Dash
           </h1>
@@ -112,25 +130,26 @@ export default function LoginPage() {
                   placeholder="Enter your email"
                   className="w-full h-[48px] px-4 border border-[#E5E5E5] rounded-lg text-[14px] outline-none focus:border-[#2563FF]"
                   required
+                  autoComplete="email"
                 />
               </div>
 
-              {error && (
+              {error ? (
                 <div className="mb-4 p-3 bg-[#FEE] border border-[#FCC] rounded-lg text-[13px] text-[#C33]">
                   {error}
                 </div>
-              )}
+              ) : null}
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !email.trim()}
                 className="w-full h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
               >
                 {loading ? "Sending..." : "Send Verification Code"}
               </button>
 
               <p className="text-[12px] text-[#9B9B9B] text-center mt-4">
-                We'll send a 6-digit code to your email
+                We&apos;ll send a 6-digit code to your email.
               </p>
             </form>
           ) : (
@@ -138,16 +157,23 @@ export default function LoginPage() {
               <div className="mb-4">
                 <button
                   type="button"
-                  onClick={() => setStep("email")}
+                  onClick={() => {
+                    if (loading) return;
+                    setStep("email");
+                    setOtp("");
+                    setError("");
+                  }}
                   className="text-[13px] text-[#2563FF] mb-4"
                 >
-                  ↁEChange email
+                  ← Change email
                 </button>
+
                 <p className="text-[13px] text-[#7A7A7A] mb-4">
                   Code sent to <strong>{email}</strong>
                 </p>
+
                 <p className="text-[11px] text-[#9B9B9B] mb-4">
-                  Check your inbox and spam folder. If you don't receive the
+                  Check your inbox and spam folder. If you don&apos;t receive the
                   code, please contact support.
                 </p>
               </div>
@@ -163,17 +189,19 @@ export default function LoginPage() {
                     setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
                   }
                   placeholder="Enter 6-digit code"
-                  className="w-full h-[48px] px-4 border border-[#E5E5E5] rounded-lg text-[14px] text-center font-mono text-[18px] tracking-widest outline-none focus:border-[#2563FF]"
+                  className="w-full h-[48px] px-4 border border-[#E5E5E5] rounded-lg text-center font-mono text-[18px] tracking-widest outline-none focus:border-[#2563FF]"
                   maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   required
                 />
               </div>
 
-              {error && (
+              {error ? (
                 <div className="mb-4 p-3 bg-[#FEE] border border-[#FCC] rounded-lg text-[13px] text-[#C33]">
                   {error}
                 </div>
-              )}
+              ) : null}
 
               <button
                 type="submit"
@@ -184,7 +212,7 @@ export default function LoginPage() {
               </button>
 
               <p className="text-[12px] text-[#9B9B9B] text-center mt-4">
-                Code expires in 10 minutes
+                Code expires in 10 minutes.
               </p>
             </form>
           )}
@@ -193,4 +221,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
