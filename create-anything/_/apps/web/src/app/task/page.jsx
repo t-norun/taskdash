@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 console.log("🚀 THIS page.jsx IS LOADED 🚀");
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -8,22 +8,12 @@ import { navigate } from "@/utils/navigation";
 /* ===============================
    authenticatedFetch
 ================================ */
-const API_HTTP = "https://api.taskdash.net";
-const ACCESS_TOKEN_KEY = "taskdash_access_token";
-
-const getAccessToken = () => {
-  if (typeof window === "undefined") return "";
-  try {
-    return localStorage.getItem(ACCESS_TOKEN_KEY) || "";
-  } catch {
-    return "";
-  }
-};
+const API_HTTP = "http://localhost:3000";
 
 const authenticatedFetch = async (pathOrUrl, options = {}) => {
   if (typeof window === "undefined") return fetch(pathOrUrl, options);
 
-  const token = getAccessToken();
+  const token = localStorage.getItem("taskdash_access_token") || "";
   const headers = new Headers(options.headers || {});
   if (token) headers.set("Authorization", "Bearer " + token);
 
@@ -43,20 +33,13 @@ function toNum(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function normalizeErrorMessage(raw) {
-  const msg = String(raw || "").trim();
-  if (!msg) return "unknown error";
-  if (msg === "missing authorization") return "Please log in first.";
-  if (msg === "start failed") return "Failed to start task.";
-  if (msg === "submit failed") return "Failed to submit task.";
-  return msg;
-}
-
 const getAttemptIdFromStart = (data) =>
   String(data?.attempt?.id || data?.attemptId || data?.id || "");
 
-const getSeedFromStart = (data, fallbackAttemptId = "") =>
-  String(data?.attempt?.seed || data?.seed || fallbackAttemptId || "");
+const getNumbersFromStart = (data) => {
+  const nums = data?.attempt?.numbers ?? data?.numbers;
+  return Array.isArray(nums) ? nums : [];
+};
 
 const getAttemptIdFromSubmit = (data, fallbackAttemptId) =>
   String(
@@ -67,59 +50,6 @@ const getAttemptIdFromSubmit = (data, fallbackAttemptId) =>
       fallbackAttemptId ||
       ""
   );
-
-async function sha256Bytes(input) {
-  const text = String(input || "");
-  const enc = new TextEncoder().encode(text);
-
-  if (
-    typeof globalThis !== "undefined" &&
-    globalThis.crypto &&
-    globalThis.crypto.subtle &&
-    typeof globalThis.crypto.subtle.digest === "function"
-  ) {
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", enc);
-    return new Uint8Array(digest);
-  }
-
-  throw new Error("crypto unavailable");
-}
-
-async function genNumbersSeeded(seed, count = 10, max = 20) {
-  const hash = await sha256Bytes(seed);
-  let idx = 0;
-
-  const rnd = () => {
-    const a = hash[idx % hash.length];
-    const b = hash[(idx + 7) % hash.length];
-    idx += 1;
-    return ((a << 8) | b) / 65535;
-  };
-
-  const set = new Set();
-  while (set.size < count) {
-    const n = 1 + Math.floor(rnd() * max);
-    set.add(n);
-  }
-
-  return Array.from(set);
-}
-
-async function getNumbersFromStart(data, fallbackAttemptId = "") {
-  const direct = data?.attempt?.numbers ?? data?.numbers;
-  if (Array.isArray(direct) && direct.length === 10) {
-    return direct.map((n) => Number(n)).filter((n) => Number.isFinite(n)).slice(0, 10);
-  }
-
-  const seed = getSeedFromStart(data, fallbackAttemptId);
-  if (!seed) return [];
-
-  try {
-    return await genNumbersSeeded(seed, 10, 20);
-  } catch {
-    return [];
-  }
-}
 
 /* ===============================
    TaskPage
@@ -135,35 +65,27 @@ export default function TaskPage() {
   const [phase, setPhase] = useState("loading");
   const [bootError, setBootError] = useState("");
 
+  // UI state（Balanceっぽい）
   const [selectedPick, setSelectedPick] = useState(null);
   const [showResetModal, setShowResetModal] = useState(false);
 
   const startedRef = useRef(false);
   const draggedIndexRef = useRef(null);
 
+  /* ===============================
+     price (client only)
+  ================================ */
   const [price, setPrice] = useState(1);
-  const [priceReady, setPriceReady] = useState(false);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     const p = Number(new URLSearchParams(window.location.search).get("price") || "1");
     setPrice(toNum(p, 1));
-    setPriceReady(true);
   }, []);
 
   /* ===============================
      start task
   ================================ */
   const startTask = async () => {
-    const token = getAccessToken();
-
-    if (!token) {
-      setBootError("Please log in first.");
-      setPhase("auth");
-      navigate("/balance");
-      throw new Error("missing authorization");
-    }
-
     setBootError("");
     setPhase("loading");
 
@@ -174,58 +96,41 @@ export default function TaskPage() {
     });
 
     const data = await r.json().catch(() => ({}));
-
-    if (r.status === 401) {
-      navigate("/balance");
-      throw new Error("missing authorization");
-    }
-
     if (!r.ok || data?.ok === false) {
       throw new Error(data?.error || "start failed");
     }
 
     const newAttemptId = getAttemptIdFromStart(data);
-    if (!newAttemptId) throw new Error("start: missing attemptId");
+    const nums = getNumbersFromStart(data);
 
-    const nums = await getNumbersFromStart(data, newAttemptId);
-    if (nums.length !== 10) throw new Error("start: numbers missing");
+    if (!newAttemptId) throw new Error("start: missing attempt.id");
+    if (nums.length !== 10) throw new Error("start: numbers missing (need 10)");
 
     setAttemptId(newAttemptId);
     setNumbers(nums);
     setOrderedNumbers(Array(10).fill(null));
     setSelectedPick(null);
+
     setStartTime(Date.now());
     setPhase("task");
   };
 
   useEffect(() => {
-    if (!priceReady) return;
     if (startedRef.current) return;
     startedRef.current = true;
-
-    const token = getAccessToken();
-    if (!token) {
-      setBootError("Please log in first.");
-      setPhase("auth");
-      navigate("/balance");
-      return;
-    }
 
     (async () => {
       try {
         await startTask();
       } catch (e) {
-        const msg = normalizeErrorMessage(e?.message ? e.message : String(e));
+        const msg = e?.message ? e.message : String(e);
         console.error("START_ERROR=", msg);
         setBootError(msg);
-        if (msg === "Please log in first.") {
-          setPhase("auth");
-          return;
-        }
         setPhase("loading");
       }
     })();
-  }, [priceReady]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [price]);
 
   /* ===============================
      drag & drop
@@ -254,7 +159,7 @@ export default function TaskPage() {
   };
 
   /* ===============================
-     click-to-place
+     click-to-place (数字もcreate寄せ)
   ================================ */
   const onPickClick = (num) => {
     if (submitting) return;
@@ -273,7 +178,7 @@ export default function TaskPage() {
   const onReset = () => {
     setOrderedNumbers(Array(10).fill(null));
     setSelectedPick(null);
-    setStartTime(Date.now());
+    setStartTime(Date.now()); // 時間もリセット（公平）
     setShowResetModal(false);
   };
 
@@ -290,12 +195,6 @@ export default function TaskPage() {
     (async () => {
       try {
         setSubmitting(true);
-
-        const token = getAccessToken();
-        if (!token) {
-          navigate("/balance");
-          throw new Error("Please log in first.");
-        }
 
         const timeMs = Math.max(0, Date.now() - startTime);
         const answer = orderedNumbers.map((n) => Number(n));
@@ -314,12 +213,6 @@ export default function TaskPage() {
         });
 
         const data = await r.json().catch(() => ({}));
-
-        if (r.status === 401) {
-          navigate("/balance");
-          throw new Error("Please log in first.");
-        }
-
         if (!r.ok || data?.ok === false) {
           throw new Error(data?.error || "submit failed");
         }
@@ -327,7 +220,7 @@ export default function TaskPage() {
         const idForResult = getAttemptIdFromSubmit(data, attemptId);
         navigate(`/result/${idForResult}`);
       } catch (e) {
-        alert(normalizeErrorMessage(e?.message || String(e)));
+        alert(e?.message || String(e));
       } finally {
         setSubmitting(false);
       }
@@ -343,9 +236,9 @@ export default function TaskPage() {
   );
 
   /* ===============================
-     UI
+     UI (Balance完全移植)
   ================================ */
-  if ((phase === "loading" || phase === "auth") && !bootError) {
+  if (phase === "loading" && !bootError) {
     return (
       <div className="min-h-screen bg-white font-inter flex items-center justify-center">
         <div className="text-[14px] text-[#7A7A7A]">Loading...</div>
@@ -370,16 +263,10 @@ export default function TaskPage() {
             <button
               onClick={async () => {
                 try {
-                  const token = getAccessToken();
-                  if (!token) {
-                    navigate("/balance");
-                    setBootError("Please log in first.");
-                    return;
-                  }
                   setBootError("");
                   await startTask();
                 } catch (e) {
-                  setBootError(normalizeErrorMessage(e?.message ?? String(e)));
+                  setBootError(e?.message ?? String(e));
                 }
               }}
               className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
@@ -392,8 +279,10 @@ export default function TaskPage() {
     );
   }
 
+  // phase === "task"
   return (
     <div className="min-h-screen bg-white font-inter">
+      {/* Top bar (Balanceと同じ) */}
       <div className="border-b border-[#EDEDED]">
         <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -425,6 +314,7 @@ export default function TaskPage() {
       </div>
 
       <div className="max-w-[800px] mx-auto px-6 py-8">
+        {/* Main card (Balanceと同じ) */}
         <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 mb-6">
           <div className="flex items-start justify-between gap-6 mb-6">
             <div className="flex-1">
@@ -445,6 +335,7 @@ export default function TaskPage() {
               </div>
             </div>
 
+            {/* 状態表示（Balanceのトーン） */}
             <div className="text-right">
               {submitting ? (
                 <div className="text-[13px] font-semibold text-[#2563FF]">
@@ -462,6 +353,7 @@ export default function TaskPage() {
             </div>
           </div>
 
+          {/* Slots（Balanceのボタン規格で再現） */}
           <div className="grid grid-cols-5 gap-2 mb-6">
             {orderedNumbers.map((num, i) => {
               const has = num != null;
@@ -492,6 +384,7 @@ export default function TaskPage() {
             })}
           </div>
 
+          {/* Picks（価格ボタンの見た目で完全一致方向） */}
           <div className="mb-3">
             <div className="text-[14px] font-medium text-[#2B2B2B] mb-3">
               Numbers
@@ -525,7 +418,7 @@ export default function TaskPage() {
           </div>
 
           <p className="text-[12px] text-[#7A7A7A] mt-4">
-            Tip: Drag & drop also works.
+            Tip: Drag & drop also works. (UI is aligned to Balance page)
           </p>
         </div>
 
@@ -537,6 +430,7 @@ export default function TaskPage() {
         </a>
       </div>
 
+      {/* Reset Modal（BalanceのAddFundsモーダル完全移植） */}
       {showResetModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
@@ -570,3 +464,5 @@ export default function TaskPage() {
     </div>
   );
 }
+
+
