@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 console.log("🚀 THIS page.jsx IS LOADED 🚀");
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +8,7 @@ import { navigate } from "@/utils/navigation";
 /* ===============================
    authenticatedFetch
 ================================ */
-const API_HTTP = "http://localhost:3000";
+const API_HTTP = "https://api.taskdash.net";
 
 const authenticatedFetch = async (pathOrUrl, options = {}) => {
   if (typeof window === "undefined") return fetch(pathOrUrl, options);
