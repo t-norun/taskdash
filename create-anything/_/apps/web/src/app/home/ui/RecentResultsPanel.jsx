@@ -13,11 +13,19 @@ export default function RecentResultsPanel({
   centsToUsd,
   shortId,
 }) {
-  if (recentLoading) return <div className="text-[13px] text-[#7A7A7A] mt-4">Loading recent results...</div>;
-  if (recentError) return <div className="text-[13px] text-[#C33] mt-4">{String(recentError)}</div>;
+  if (recentLoading) {
+    return <div className="text-[13px] text-[#7A7A7A] mt-4">Loading recent results...</div>;
+  }
+
+  if (recentError) {
+    return <div className="text-[13px] text-[#C33] mt-4">{String(recentError)}</div>;
+  }
 
   const items = Array.isArray(recentMatches) ? recentMatches : [];
-  if (items.length === 0) return <div className="text-[13px] text-[#7A7A7A] mt-4">No recent results yet.</div>;
+
+  if (items.length === 0) {
+    return <div className="text-[13px] text-[#7A7A7A] mt-4">No recent results yet.</div>;
+  }
 
   return (
     <div className="mt-5 grid grid-cols-1 gap-3">
@@ -25,6 +33,7 @@ export default function RecentResultsPanel({
         const id = it.id || it.matchId || it.submissionId || it.attemptId || idx;
         const outcome = String(it.outcome || "").toLowerCase();
         const when = it.settledAt || it.createdAt || it.updatedAt || null;
+
         const priceUsd =
           typeof it.priceUsd === "number"
             ? it.priceUsd
@@ -32,14 +41,32 @@ export default function RecentResultsPanel({
             ? centsToUsd(it.stakeCents)
             : null;
 
-        const youScore = it.my && typeof it.my.score === "number" ? it.my.score : it.playerScore;
-        const peerScore = it.opponent && typeof it.opponent.score === "number" ? it.opponent.score : it.cpuScore;
+        const youScore =
+          it.my && typeof it.my.score === "number" ? it.my.score : it.playerScore;
 
-        const youTimeMs = it.my && typeof it.my.timeMs === "number" ? it.my.timeMs : it.playerTimeMs;
-        const peerTimeMs = it.opponent && typeof it.opponent.timeMs === "number" ? it.opponent.timeMs : it.cpuTimeMs;
+        const peerScore =
+          it.opponent && typeof it.opponent.score === "number"
+            ? it.opponent.score
+            : it.cpuScore;
+
+        const youTimeMs =
+          it.my && typeof it.my.timeMs === "number" ? it.my.timeMs : it.playerTimeMs;
+
+        const peerTimeMs =
+          it.opponent && typeof it.opponent.timeMs === "number"
+            ? it.opponent.timeMs
+            : it.cpuTimeMs;
 
         const badge =
-          outcome === "win" ? "Win" : outcome === "lose" ? "Lose" : outcome === "tie" ? "Tie" : outcome ? outcome : " E;
+          outcome === "win"
+            ? "Win"
+            : outcome === "lose"
+            ? "Lose"
+            : outcome === "tie"
+            ? "Tie"
+            : outcome
+            ? outcome
+            : "-";
 
         return (
           <div key={String(id)} className="border border-[#F1F1F1] rounded-xl p-4">
@@ -48,18 +75,26 @@ export default function RecentResultsPanel({
                 <div className="text-[13px] font-semibold text-[#2B2B2B]">
                   Result: <span className="font-bold">{badge}</span>
                   {priceUsd != null ? (
-                    <span className="text-[#7A7A7A] font-medium"> · Tier ${Number(priceUsd).toFixed(2)}</span>
+                    <span className="text-[#7A7A7A] font-medium">
+                      {" "}
+                      · Tier ${Number(priceUsd).toFixed(2)}
+                    </span>
                   ) : null}
                 </div>
+
                 <div className="text-[12px] text-[#7A7A7A] mt-1">
-                  {when ? fmtWhenShort(when) : ""} · ID: {shortId(id)}
+                  {when ? fmtWhenShort(when) : "-"} · ID: {shortId(id)}
                 </div>
               </div>
 
               {!isDemo && it.matchId ? (
                 <button
                   type="button"
-                  onClick={() => (window.location.href = `/match?matchId=${encodeURIComponent(String(it.matchId))}`)}
+                  onClick={() =>
+                    (window.location.href = `/match?matchId=${encodeURIComponent(
+                      String(it.matchId)
+                    )}`)
+                  }
                   className="shrink-0 h-[36px] px-4 rounded-lg border border-[#E5E5E5] text-[12px] font-semibold text-[#2B2B2B] hover:border-[#2563FF]"
                 >
                   Open
@@ -71,13 +106,16 @@ export default function RecentResultsPanel({
               <div className="rounded-lg border border-[#F1F1F1] p-3">
                 <div className="text-[12px] text-[#7A7A7A]">You</div>
                 <div className="text-[14px] font-semibold text-[#2B2B2B] mt-1">
-                  Score: {youScore != null ? String(youScore) : " E} · Time: {youTimeMs != null ? fmtElapsed(youTimeMs) : " E}
+                  Score: {youScore != null ? String(youScore) : "-"} · Time:{" "}
+                  {youTimeMs != null ? fmtElapsed(youTimeMs) : "-"}
                 </div>
               </div>
+
               <div className="rounded-lg border border-[#F1F1F1] p-3">
                 <div className="text-[12px] text-[#7A7A7A]">Opponent</div>
                 <div className="text-[14px] font-semibold text-[#2B2B2B] mt-1">
-                  Score: {peerScore != null ? String(peerScore) : " E} · Time: {peerTimeMs != null ? fmtElapsed(peerTimeMs) : " E}
+                  Score: {peerScore != null ? String(peerScore) : "-"} · Time:{" "}
+                  {peerTimeMs != null ? fmtElapsed(peerTimeMs) : "-"}
                 </div>
               </div>
             </div>

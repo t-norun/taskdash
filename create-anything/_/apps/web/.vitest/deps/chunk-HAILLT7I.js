@@ -1,8 +1,10 @@
 import {
-  __commonJS,
-  __toESM,
   require_react
-} from "./chunk-UTEJFLXC.js";
+} from "./chunk-32E4H3EV.js";
+import {
+  __commonJS,
+  __toESM
+} from "./chunk-G3PMV62Z.js";
 
 // node_modules/react-router/node_modules/cookie/dist/index.js
 var require_dist = __commonJS({
@@ -436,7 +438,7 @@ var require_set_cookie = __commonJS({
   }
 });
 
-// node_modules/react-router/dist/development/chunk-JZWAC4HX.mjs
+// node_modules/react-router/dist/development/chunk-LFPYN7LY.mjs
 var React = __toESM(require_react(), 1);
 var React2 = __toESM(require_react(), 1);
 var React3 = __toESM(require_react(), 1);
@@ -461,6 +463,9 @@ var Action = ((Action2) => {
   return Action2;
 })(Action || {});
 var PopStateEventType = "popstate";
+function isLocation(obj) {
+  return typeof obj === "object" && obj != null && "pathname" in obj && "search" in obj && "hash" in obj && "state" in obj && "key" in obj;
+}
 function createMemoryHistory(options = {}) {
   let { initialEntries = ["/"], initialIndex, v5Compat = false } = options;
   let entries;
@@ -468,7 +473,8 @@ function createMemoryHistory(options = {}) {
     (entry, index2) => createMemoryLocation(
       entry,
       typeof entry === "string" ? null : entry.state,
-      index2 === 0 ? "default" : void 0
+      index2 === 0 ? "default" : void 0,
+      typeof entry === "string" ? void 0 : entry.unstable_mask
     )
   );
   let index = clampIndex(
@@ -482,12 +488,13 @@ function createMemoryHistory(options = {}) {
   function getCurrentLocation() {
     return entries[index];
   }
-  function createMemoryLocation(to, state = null, key) {
+  function createMemoryLocation(to, state = null, key, unstable_mask) {
     let location = createLocation(
       entries ? getCurrentLocation().pathname : "/",
       to,
       state,
-      key
+      key,
+      unstable_mask
     );
     warning(
       location.pathname.charAt(0) === "/",
@@ -524,7 +531,7 @@ function createMemoryHistory(options = {}) {
     },
     push(to, state) {
       action = "PUSH";
-      let nextLocation = createMemoryLocation(to, state);
+      let nextLocation = isLocation(to) ? to : createMemoryLocation(to, state);
       index += 1;
       entries.splice(index, entries.length, nextLocation);
       if (v5Compat && listener) {
@@ -533,7 +540,7 @@ function createMemoryHistory(options = {}) {
     },
     replace(to, state) {
       action = "REPLACE";
-      let nextLocation = createMemoryLocation(to, state);
+      let nextLocation = isLocation(to) ? to : createMemoryLocation(to, state);
       entries[index] = nextLocation;
       if (v5Compat && listener) {
         listener({ action, location: nextLocation, delta: 0 });
@@ -559,13 +566,20 @@ function createMemoryHistory(options = {}) {
 }
 function createBrowserHistory(options = {}) {
   function createBrowserLocation(window2, globalHistory) {
-    let { pathname, search, hash } = window2.location;
+    var _a;
+    let maskedLocation = (_a = globalHistory.state) == null ? void 0 : _a.masked;
+    let { pathname, search, hash } = maskedLocation || window2.location;
     return createLocation(
       "",
       { pathname, search, hash },
       // state defaults to `null` because `window.history.state` does
       globalHistory.state && globalHistory.state.usr || null,
-      globalHistory.state && globalHistory.state.key || "default"
+      globalHistory.state && globalHistory.state.key || "default",
+      maskedLocation ? {
+        pathname: window2.location.pathname,
+        search: window2.location.search,
+        hash: window2.location.hash
+      } : void 0
     );
   }
   function createBrowserHref(window2, to) {
@@ -642,10 +656,15 @@ function getHistoryState(location, index) {
   return {
     usr: location.state,
     key: location.key,
-    idx: index
+    idx: index,
+    masked: location.unstable_mask ? {
+      pathname: location.pathname,
+      search: location.search,
+      hash: location.hash
+    } : void 0
   };
 }
-function createLocation(current, to, state = null, key) {
+function createLocation(current, to, state = null, key, unstable_mask) {
   let location = {
     pathname: typeof current === "string" ? current : current.pathname,
     search: "",
@@ -656,7 +675,8 @@ function createLocation(current, to, state = null, key) {
     // full Locations now and avoid the need to run through this flow at all
     // But that's a pretty big refactor to the current test suite so going to
     // keep as is for the time being and just let any incoming keys take precedence
-    key: to && to.key || key || createKey()
+    key: to && to.key || key || createKey(),
+    unstable_mask
   };
   return location;
 }
@@ -715,11 +735,11 @@ function getUrlBasedHistory(getLocation, createHref2, validateLocation, options 
   }
   function push(to, state) {
     action = "PUSH";
-    let location = createLocation(history.location, to, state);
+    let location = isLocation(to) ? to : createLocation(history.location, to, state);
     if (validateLocation) validateLocation(location, to);
     index = getIndex() + 1;
     let historyState = getHistoryState(location, index);
-    let url = history.createHref(location);
+    let url = history.createHref(location.unstable_mask || location);
     try {
       globalHistory.pushState(historyState, "", url);
     } catch (error) {
@@ -734,11 +754,11 @@ function getUrlBasedHistory(getLocation, createHref2, validateLocation, options 
   }
   function replace2(to, state) {
     action = "REPLACE";
-    let location = createLocation(history.location, to, state);
+    let location = isLocation(to) ? to : createLocation(history.location, to, state);
     if (validateLocation) validateLocation(location, to);
     index = getIndex();
     let historyState = getHistoryState(location, index);
-    let url = history.createHref(location);
+    let url = history.createHref(location.unstable_mask || location);
     globalHistory.replaceState(historyState, "", url);
     if (v5Compat && listener) {
       listener({ action, location: history.location, delta: 0 });
@@ -1202,9 +1222,16 @@ function compilePath(path, caseSensitive = false, end = true) {
   let params = [];
   let regexpSource = "^" + path.replace(/\/*\*?$/, "").replace(/^\/*/, "/").replace(/[\\.*+^${}|()[\]]/g, "\\$&").replace(
     /\/:([\w-]+)(\?)?/g,
-    (_, paramName, isOptional) => {
+    (match, paramName, isOptional, index, str) => {
       params.push({ paramName, isOptional: isOptional != null });
-      return isOptional ? "/?([^\\/]+)?" : "/([^\\/]+)";
+      if (isOptional) {
+        let nextChar = str.charAt(index + match.length);
+        if (nextChar && nextChar !== "/") {
+          return "/([^\\/]*)";
+        }
+        return "(?:/([^\\/]*))?";
+      }
+      return "/([^\\/]+)";
     }
   ).replace(/\/([\w-]+)\?(\/|$)/g, "(/$1)?$2");
   if (path.endsWith("*")) {
@@ -1801,12 +1828,14 @@ function createRouter(init) {
   let initialMatchesIsFOW = false;
   let initialErrors = null;
   let initialized;
+  let renderFallback;
   if (initialMatches == null && !init.patchRoutesOnNavigation) {
     let error = getInternalRouterError(404, {
       pathname: init.history.location.pathname
     });
     let { matches, route } = getShortCircuitMatches(dataRoutes);
     initialized = true;
+    renderFallback = !initialized;
     initialMatches = matches;
     initialErrors = { [route.id]: error };
   } else {
@@ -1822,6 +1851,7 @@ function createRouter(init) {
     }
     if (!initialMatches) {
       initialized = false;
+      renderFallback = !initialized;
       initialMatches = [];
       let fogOfWar = checkFogOfWar(
         null,
@@ -1834,23 +1864,26 @@ function createRouter(init) {
       }
     } else if (initialMatches.some((m) => m.route.lazy)) {
       initialized = false;
+      renderFallback = !initialized;
     } else if (!initialMatches.some((m) => routeHasLoaderOrMiddleware(m.route))) {
       initialized = true;
+      renderFallback = !initialized;
     } else {
       let loaderData = init.hydrationData ? init.hydrationData.loaderData : null;
       let errors = init.hydrationData ? init.hydrationData.errors : null;
+      let relevantMatches = initialMatches;
       if (errors) {
         let idx = initialMatches.findIndex(
           (m) => errors[m.route.id] !== void 0
         );
-        initialized = initialMatches.slice(0, idx + 1).every(
-          (m) => !shouldLoadRouteOnHydration(m.route, loaderData, errors)
-        );
-      } else {
-        initialized = initialMatches.every(
-          (m) => !shouldLoadRouteOnHydration(m.route, loaderData, errors)
-        );
+        relevantMatches = relevantMatches.slice(0, idx + 1);
       }
+      renderFallback = false;
+      initialized = relevantMatches.every((m) => {
+        let status = getRouteHydrationStatus(m.route, loaderData, errors);
+        renderFallback = renderFallback || status.renderFallback;
+        return !status.shouldLoad;
+      });
     }
   }
   let router;
@@ -1859,6 +1892,7 @@ function createRouter(init) {
     location: init.history.location,
     matches: initialMatches,
     initialized,
+    renderFallback,
     navigation: IDLE_NAVIGATION,
     // Don't restore on initial updateState() if we were SSR'd
     restoreScrollPosition: init.hydrationData != null ? false : null,
@@ -2087,6 +2121,7 @@ function createRouter(init) {
         historyAction: pendingAction,
         location,
         initialized: true,
+        renderFallback: false,
         navigation: IDLE_NAVIGATION,
         revalidation: "idle",
         restoreScrollPosition,
@@ -2132,8 +2167,27 @@ function createRouter(init) {
       normalizedPath,
       opts
     );
+    let maskPath;
+    if (opts == null ? void 0 : opts.unstable_mask) {
+      let partialPath = typeof opts.unstable_mask === "string" ? parsePath(opts.unstable_mask) : {
+        ...state.location.unstable_mask,
+        ...opts.unstable_mask
+      };
+      maskPath = {
+        pathname: "",
+        search: "",
+        hash: "",
+        ...partialPath
+      };
+    }
     let currentLocation = state.location;
-    let nextLocation = createLocation(state.location, path, opts && opts.state);
+    let nextLocation = createLocation(
+      currentLocation,
+      path,
+      opts && opts.state,
+      void 0,
+      maskPath
+    );
     nextLocation = {
       ...nextLocation,
       ...init.history.encodeLocation(nextLocation)
@@ -4426,11 +4480,12 @@ function getMatchesToLoad(request, scopedContext, mapRouteProperties2, manifest,
     } else if (!routeHasLoaderOrMiddleware(route)) {
       forceShouldLoad = false;
     } else if (initialHydration) {
-      forceShouldLoad = shouldLoadRouteOnHydration(
+      let { shouldLoad: shouldLoad2 } = getRouteHydrationStatus(
         route,
         state.loaderData,
         state.errors
       );
+      forceShouldLoad = shouldLoad2;
     } else if (isNewLoader(state.loaderData, state.matches[index], match)) {
       forceShouldLoad = true;
     }
@@ -4578,22 +4633,23 @@ function getMatchesToLoad(request, scopedContext, mapRouteProperties2, manifest,
 function routeHasLoaderOrMiddleware(route) {
   return route.loader != null || route.middleware != null && route.middleware.length > 0;
 }
-function shouldLoadRouteOnHydration(route, loaderData, errors) {
+function getRouteHydrationStatus(route, loaderData, errors) {
   if (route.lazy) {
-    return true;
+    return { shouldLoad: true, renderFallback: true };
   }
   if (!routeHasLoaderOrMiddleware(route)) {
-    return false;
+    return { shouldLoad: false, renderFallback: false };
   }
   let hasData = loaderData != null && route.id in loaderData;
   let hasError = errors != null && errors[route.id] !== void 0;
   if (!hasData && hasError) {
-    return false;
+    return { shouldLoad: false, renderFallback: false };
   }
   if (typeof route.loader === "function" && route.loader.hydrate === true) {
-    return true;
+    return { shouldLoad: true, renderFallback: !hasData };
   }
-  return !hasData && !hasError;
+  let shouldLoad = !hasData && !hasError;
+  return { shouldLoad, renderFallback: shouldLoad };
 }
 function isNewLoader(currentLoaderData, currentMatch, match) {
   let isNew = (
@@ -4680,6 +4736,7 @@ function patchRoutesImpl(routeId, children, routesToUse, manifest, mapRoutePrope
   }
 }
 function isSameRoute(newRoute, existingRoute) {
+  var _a;
   if ("id" in newRoute && "id" in existingRoute && newRoute.id === existingRoute.id) {
     return true;
   }
@@ -4689,12 +4746,12 @@ function isSameRoute(newRoute, existingRoute) {
   if ((!newRoute.children || newRoute.children.length === 0) && (!existingRoute.children || existingRoute.children.length === 0)) {
     return true;
   }
-  return newRoute.children.every(
+  return ((_a = newRoute.children) == null ? void 0 : _a.every(
     (aChild, i) => {
-      var _a;
-      return (_a = existingRoute.children) == null ? void 0 : _a.some((bChild) => isSameRoute(aChild, bChild));
+      var _a2;
+      return (_a2 = existingRoute.children) == null ? void 0 : _a2.some((bChild) => isSameRoute(aChild, bChild));
     }
-  );
+  )) ?? false;
 }
 var lazyRoutePropertyCache = /* @__PURE__ */ new WeakMap();
 var loadLazyRouteProperty = ({
@@ -6075,7 +6132,7 @@ function useResolvedPath(to, { relative } = {}) {
 function useRoutes(routes, locationArg) {
   return useRoutesImpl(routes, locationArg);
 }
-function useRoutesImpl(routes, locationArg, dataRouterState, onError, future) {
+function useRoutesImpl(routes, locationArg, dataRouterOpts) {
   var _a;
   invariant(
     useInRouterContext(),
@@ -6157,9 +6214,7 @@ Please change the parent <Route path="${parentPath}"> to <Route path="${parentPa
       })
     ),
     parentMatches,
-    dataRouterState,
-    onError,
-    future
+    dataRouterOpts
   );
   if (locationArg && renderedMatches) {
     return React2.createElement(
@@ -6172,6 +6227,7 @@ Please change the parent <Route path="${parentPath}"> to <Route path="${parentPa
             hash: "",
             state: null,
             key: "default",
+            unstable_mask: void 0,
             ...location
           },
           navigationType: "POP"
@@ -6300,7 +6356,8 @@ function RenderedRoute({ routeContext, match, children }) {
   }
   return React2.createElement(RouteContext.Provider, { value: routeContext }, children);
 }
-function _renderMatches(matches, parentMatches = [], dataRouterState = null, onErrorHandler = null, future = null) {
+function _renderMatches(matches, parentMatches = [], dataRouterOpts) {
+  let dataRouterState = dataRouterOpts == null ? void 0 : dataRouterOpts.state;
   if (matches == null) {
     if (!dataRouterState) {
       return null;
@@ -6332,7 +6389,8 @@ function _renderMatches(matches, parentMatches = [], dataRouterState = null, onE
   }
   let renderFallback = false;
   let fallbackIndex = -1;
-  if (dataRouterState) {
+  if (dataRouterOpts && dataRouterState) {
+    renderFallback = dataRouterState.renderFallback;
     for (let i = 0; i < renderedMatches.length; i++) {
       let match = renderedMatches[i];
       if (match.route.HydrateFallback || match.route.hydrateFallbackElement) {
@@ -6342,7 +6400,9 @@ function _renderMatches(matches, parentMatches = [], dataRouterState = null, onE
         let { loaderData, errors: errors2 } = dataRouterState;
         let needsToRunLoader = match.route.loader && !loaderData.hasOwnProperty(match.route.id) && (!errors2 || errors2[match.route.id] === void 0);
         if (match.route.lazy || needsToRunLoader) {
-          renderFallback = true;
+          if (dataRouterOpts.isStatic) {
+            renderFallback = true;
+          }
           if (fallbackIndex >= 0) {
             renderedMatches = renderedMatches.slice(0, fallbackIndex + 1);
           } else {
@@ -6353,6 +6413,7 @@ function _renderMatches(matches, parentMatches = [], dataRouterState = null, onE
       }
     }
   }
+  let onErrorHandler = dataRouterOpts == null ? void 0 : dataRouterOpts.onError;
   let onError = dataRouterState && onErrorHandler ? (error, errorInfo) => {
     var _a, _b;
     onErrorHandler(error, {
@@ -6970,6 +7031,7 @@ function RouterProvider({
         routes: router.routes,
         future: router.future,
         state,
+        isStatic: false,
         onError
       }
     )
@@ -6994,9 +7056,10 @@ function DataRoutes({
   routes,
   future,
   state,
+  isStatic,
   onError
 }) {
-  return useRoutesImpl(routes, void 0, state, onError, future);
+  return useRoutesImpl(routes, void 0, { state, isStatic, onError, future });
 }
 function MemoryRouter({
   basename,
@@ -7114,7 +7177,8 @@ function Router({
     search = "",
     hash = "",
     state = null,
-    key = "default"
+    key = "default",
+    unstable_mask
   } = locationProp;
   let locationContext = React3.useMemo(() => {
     let trailingPathname = stripBasename(pathname, basename);
@@ -7127,11 +7191,21 @@ function Router({
         search,
         hash,
         state,
-        key
+        key,
+        unstable_mask
       },
       navigationType
     };
-  }, [basename, pathname, search, hash, state, key, navigationType]);
+  }, [
+    basename,
+    pathname,
+    search,
+    hash,
+    state,
+    key,
+    navigationType,
+    unstable_mask
+  ]);
   warning(
     locationContext != null,
     `<Router basename="${basename}"> is not able to match the URL "${pathname}${search}${hash}" because it does not start with the basename, so the <Router> won't render anything.`
@@ -8014,7 +8088,7 @@ async function decodeDeferred(reader) {
   }
 }
 function encode(input, options) {
-  const { plugins, postPlugins, signal } = options ?? {};
+  const { plugins, postPlugins, signal, onComplete } = options ?? {};
   const encoder3 = {
     deferred: {},
     index: 0,
@@ -8140,6 +8214,7 @@ function encode(input, options) {
         raceDone();
       }
       await Promise.all(Object.values(encoder3.deferred));
+      onComplete == null ? void 0 : onComplete();
       controller.close();
     }
   });
@@ -9371,7 +9446,7 @@ function getPartialManifest({ sri, ...manifest }, router) {
     sri: sri ? true : void 0
   };
 }
-function getPatchRoutesOnNavigationFunction(manifest, routeModules, ssr, routeDiscovery, isSpaMode, basename) {
+function getPatchRoutesOnNavigationFunction(getRouter, manifest, routeModules, ssr, routeDiscovery, isSpaMode, basename) {
   if (!isFogOfWarEnabled(routeDiscovery, ssr)) {
     return void 0;
   }
@@ -9379,9 +9454,12 @@ function getPatchRoutesOnNavigationFunction(manifest, routeModules, ssr, routeDi
     if (discoveredPaths.has(path)) {
       return;
     }
+    let { state } = getRouter();
     await fetchAndApplyManifestPatches(
       [path],
-      fetcherKey ? window.location.href : path,
+      // If we're patching for a fetcher call, reload the current location
+      // Otherwise prefer any ongoing navigation location
+      fetcherKey ? window.location.href : createPath(state.navigation.location || state.location),
       manifest,
       routeModules,
       ssr,
@@ -9867,7 +9945,7 @@ function Meta() {
     routeMeta = routeMeta || [];
     if (!Array.isArray(routeMeta)) {
       throw new Error(
-        "The route at " + _match.route.path + " returns an invalid value. All route meta functions must return an array of meta objects.\n\nTo reference the meta function API, see https://remix.run/route/meta"
+        "The route at " + _match.route.path + " returns an invalid value. All route meta functions must return an array of meta objects.\n\nTo reference the meta function API, see https://reactrouter.com/start/framework/route-module#meta"
       );
     }
     match.meta = routeMeta;
@@ -10197,7 +10275,7 @@ var isBrowser2 = typeof window !== "undefined" && typeof window.document !== "un
 try {
   if (isBrowser2) {
     window.__reactRouterVersion = // @ts-expect-error
-    "7.13.0";
+    "7.13.1";
   }
 } catch (e) {
 }
@@ -10397,6 +10475,7 @@ var Link = React10.forwardRef(
     relative,
     reloadDocument,
     replace: replace2,
+    unstable_mask,
     state,
     target,
     to,
@@ -10405,17 +10484,32 @@ var Link = React10.forwardRef(
     unstable_defaultShouldRevalidate,
     ...rest
   }, forwardedRef) {
-    let { basename, unstable_useTransitions } = React10.useContext(NavigationContext);
+    let { basename, navigator, unstable_useTransitions } = React10.useContext(NavigationContext);
     let isAbsolute = typeof to === "string" && ABSOLUTE_URL_REGEX2.test(to);
     let parsed = parseToInfo(to, basename);
     to = parsed.to;
     let href2 = useHref(to, { relative });
+    let location = useLocation();
+    let maskedHref = null;
+    if (unstable_mask) {
+      let resolved = resolveTo(
+        unstable_mask,
+        [],
+        location.unstable_mask ? location.unstable_mask.pathname : "/",
+        true
+      );
+      if (basename !== "/") {
+        resolved.pathname = resolved.pathname === "/" ? basename : joinPaths([basename, resolved.pathname]);
+      }
+      maskedHref = navigator.createHref(resolved);
+    }
     let [shouldPrefetch, prefetchRef, prefetchHandlers] = usePrefetchBehavior(
       prefetch,
       rest
     );
     let internalOnClick = useLinkClickHandler(to, {
       replace: replace2,
+      unstable_mask,
       state,
       target,
       preventScrollReset,
@@ -10430,6 +10524,7 @@ var Link = React10.forwardRef(
         internalOnClick(event);
       }
     }
+    let isSpaLink = !(parsed.isExternal || reloadDocument);
     let link = (
       // eslint-disable-next-line jsx-a11y/anchor-has-content
       React10.createElement(
@@ -10437,8 +10532,8 @@ var Link = React10.forwardRef(
         {
           ...rest,
           ...prefetchHandlers,
-          href: parsed.absoluteURL || href2,
-          onClick: parsed.isExternal || reloadDocument ? onClick : handleClick,
+          href: (isSpaLink ? maskedHref : void 0) || parsed.absoluteURL || href2,
+          onClick: isSpaLink ? handleClick : onClick,
           ref: mergeRefs(forwardedRef, prefetchRef),
           target,
           "data-discover": !isAbsolute && discover === "render" ? "true" : void 0
@@ -10649,6 +10744,7 @@ function useDataRouterState2(hookName) {
 function useLinkClickHandler(to, {
   target,
   replace: replaceProp,
+  unstable_mask,
   state,
   preventScrollReset,
   relative,
@@ -10666,6 +10762,7 @@ function useLinkClickHandler(to, {
         let replace2 = replaceProp !== void 0 ? replaceProp : createPath(location) === createPath(path);
         let doNavigate = () => navigate(to, {
           replace: replace2,
+          unstable_mask,
           state,
           preventScrollReset,
           relative,
@@ -10684,6 +10781,7 @@ function useLinkClickHandler(to, {
       navigate,
       path,
       replaceProp,
+      unstable_mask,
       state,
       target,
       to,
@@ -11079,7 +11177,8 @@ function StaticRouter({
     search: locationProp.search || "",
     hash: locationProp.hash || "",
     state: locationProp.state != null ? locationProp.state : null,
-    key: locationProp.key || "default"
+    key: locationProp.key || "default",
+    unstable_mask: void 0
   };
   let staticNavigator = getStatelessNavigator();
   return React11.createElement(
@@ -11135,11 +11234,12 @@ function StaticRouterProvider({
       unstable_useTransitions: false
     },
     React11.createElement(
-      DataRoutes2,
+      DataRoutes,
       {
         routes: router.routes,
         future: router.future,
-        state
+        state,
+        isStatic: true
       }
     )
   ))))), hydrateScript ? React11.createElement(
@@ -11150,13 +11250,6 @@ function StaticRouterProvider({
       dangerouslySetInnerHTML: { __html: hydrateScript }
     }
   ) : null);
-}
-function DataRoutes2({
-  routes,
-  future,
-  state
-}) {
-  return useRoutesImpl(routes, void 0, state, void 0, future);
 }
 function serializeErrors(errors) {
   if (!errors) return null;
@@ -11253,6 +11346,7 @@ function createStaticRouter(routes, context, opts = {}) {
         actionData: context.actionData,
         errors: context.errors,
         initialized: true,
+        renderFallback: false,
         navigation: IDLE_NAVIGATION,
         restoreScrollPosition: null,
         preventScrollReset: false,
@@ -11332,7 +11426,7 @@ function encodeLocation(to) {
 }
 var ABSOLUTE_URL_REGEX3 = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
-// node_modules/react-router/dist/development/chunk-4LKRSAEJ.mjs
+// node_modules/react-router/dist/development/chunk-JPUPSTYD.mjs
 var React12 = __toESM(require_react(), 1);
 var React22 = __toESM(require_react(), 1);
 var import_cookie = __toESM(require_dist(), 1);
@@ -12010,7 +12104,14 @@ function prependCookies(parentHeaders, childHeaders) {
 }
 function throwIfPotentialCSRFAttack(headers, allowedActionOrigins) {
   let originHeader = headers.get("origin");
-  let originDomain = typeof originHeader === "string" && originHeader !== "null" ? new URL(originHeader).host : originHeader;
+  let originDomain = null;
+  try {
+    originDomain = typeof originHeader === "string" && originHeader !== "null" ? new URL(originHeader).host : originHeader;
+  } catch {
+    throw new Error(
+      `\`origin\` header is not a valid URL. Aborting the action.`
+    );
+  }
   let host = parseHostHeader(headers);
   if (originDomain && (!host || originDomain !== host.value)) {
     if (!isAllowedOrigin(originDomain, allowedActionOrigins)) {
@@ -12300,9 +12401,11 @@ function encodeViaTurboStream(data2, requestSignal, streamTimeout, serverMode) {
     () => controller.abort(new Error("Server Timeout")),
     typeof streamTimeout === "number" ? streamTimeout : 4950
   );
-  requestSignal.addEventListener("abort", () => clearTimeout(timeoutId));
+  let clearStreamTimeout = () => clearTimeout(timeoutId);
+  requestSignal.addEventListener("abort", clearStreamTimeout);
   return encode(data2, {
     signal: controller.signal,
+    onComplete: clearStreamTimeout,
     plugins: [
       (value) => {
         if (value instanceof Error) {
@@ -13855,10 +13958,10 @@ export {
 };
 /*! Bundled license information:
 
-react-router/dist/development/chunk-JZWAC4HX.mjs:
-react-router/dist/development/chunk-4LKRSAEJ.mjs:
+react-router/dist/development/chunk-LFPYN7LY.mjs:
+react-router/dist/development/chunk-JPUPSTYD.mjs:
   (**
-   * react-router v7.13.0
+   * react-router v7.13.1
    *
    * Copyright (c) Remix Software Inc.
    *
@@ -13868,4 +13971,4 @@ react-router/dist/development/chunk-4LKRSAEJ.mjs:
    * @license MIT
    *)
 */
-//# sourceMappingURL=chunk-ISZ24F6H.js.map
+//# sourceMappingURL=chunk-HAILLT7I.js.map

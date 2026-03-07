@@ -1,9 +1,9 @@
 import {
   HydratedRouter,
   RouterProvider2
-} from "./chunk-CWPXVVDB.js";
-import "./chunk-S4CVHYIU.js";
-import "./chunk-LYQBP2WS.js";
+} from "./chunk-NE45WGG5.js";
+import "./chunk-XHU36PYF.js";
+import "./chunk-K753KP4C.js";
 import {
   Action,
   Await,
@@ -133,8 +133,9 @@ import {
   withComponentProps,
   withErrorBoundaryProps,
   withHydrateFallbackProps
-} from "./chunk-ISZ24F6H.js";
-import "./chunk-UTEJFLXC.js";
+} from "./chunk-HAILLT7I.js";
+import "./chunk-32E4H3EV.js";
+import "./chunk-G3PMV62Z.js";
 export {
   Await,
   BrowserRouter,
@@ -271,7 +272,7 @@ export {
 
 react-router-dom/dist/index.mjs:
   (**
-   * react-router-dom v7.13.0
+   * react-router-dom v7.13.1
    *
    * Copyright (c) Remix Software Inc.
    *

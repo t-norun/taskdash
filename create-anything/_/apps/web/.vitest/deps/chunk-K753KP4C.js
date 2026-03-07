@@ -2,7 +2,7 @@
 
 react-router/dist/development/index.mjs:
   (**
-   * react-router v7.13.0
+   * react-router v7.13.1
    *
    * Copyright (c) Remix Software Inc.
    *

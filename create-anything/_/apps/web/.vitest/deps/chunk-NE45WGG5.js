@@ -1,6 +1,6 @@
 import {
   require_react_dom
-} from "./chunk-S4CVHYIU.js";
+} from "./chunk-XHU36PYF.js";
 import {
   CRITICAL_CSS_DATA_ATTRIBUTE,
   ErrorResponseImpl,
@@ -32,11 +32,13 @@ import {
   singleFetchUrl,
   stripIndexParam,
   useFogOFWarDiscovery
-} from "./chunk-ISZ24F6H.js";
+} from "./chunk-HAILLT7I.js";
 import {
-  __toESM,
   require_react
-} from "./chunk-UTEJFLXC.js";
+} from "./chunk-32E4H3EV.js";
+import {
+  __toESM
+} from "./chunk-G3PMV62Z.js";
 
 // node_modules/react-router/dist/development/dom-export.mjs
 var React = __toESM(require_react(), 1);
@@ -139,6 +141,12 @@ function createHydratedRouter({
       hydrationData.errors = deserializeErrors(hydrationData.errors);
     }
   }
+  if (window.history.state && window.history.state.masked) {
+    window.history.replaceState(
+      { ...window.history.state, masked: void 0 },
+      ""
+    );
+  }
   let router2 = createRouter({
     routes,
     history: createBrowserHistory(),
@@ -160,6 +168,7 @@ function createHydratedRouter({
       ssrInfo.context.future.unstable_trailingSlashAwareDataRequests
     ),
     patchRoutesOnNavigation: getPatchRoutesOnNavigationFunction(
+      () => router2,
       ssrInfo.manifest,
       ssrInfo.routeModules,
       ssrInfo.context.ssr,
@@ -978,7 +987,7 @@ export {
 
 react-router/dist/development/dom-export.mjs:
   (**
-   * react-router v7.13.0
+   * react-router v7.13.1
    *
    * Copyright (c) Remix Software Inc.
    *
@@ -988,4 +997,4 @@ react-router/dist/development/dom-export.mjs:
    * @license MIT
    *)
 */
-//# sourceMappingURL=chunk-CWPXVVDB.js.map
+//# sourceMappingURL=chunk-NE45WGG5.js.map
