@@ -1,113 +1,73 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { navigate, getQueryParam } from "@/utils/navigation";
 import { GripVertical } from "lucide-react";
-import { navigate } from "@/utils/navigation";
-import { authenticatedFetch, getAccessToken } from "@/utils/auth";
-import { isDemoMode as rtIsDemoMode } from "@/utils/runtimeData";
+import { authenticatedFetch } from "@/utils/auth";
 
-/* ===============================
-   helpers
-================================ */
-function toNum(v, fallback = 0) {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function makeDemoAttemptId() {
-  return `demo-attempt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function makeDemoNumbers(count = 10) {
-  const set = new Set();
-  while (set.size < count) {
-    set.add(Math.floor(Math.random() * 900) + 100);
-  }
-  return Array.from(set);
-}
-
-function getAttemptIdFromStart(data) {
-  return String(data?.attempt?.id || data?.attemptId || data?.id || "");
-}
-
-function getNumbersFromStart(data) {
-  const nums = data?.attempt?.numbers ?? data?.numbers;
-  return Array.isArray(nums) ? nums : [];
-}
-
-function getAttemptIdFromSubmit(data, fallbackAttemptId) {
-  return String(
-    data?.attempt?.id ||
-      data?.attemptId ||
-      data?.id ||
-      data?.attempt?.attemptId ||
-      fallbackAttemptId ||
-      ""
-  );
-}
-
-/* ===============================
-   TaskPage
-================================ */
 export default function TaskPage() {
-  const [attemptId, setAttemptId] = useState(null);
-  const [priceUsd, setPriceUsd] = useState(1);
-
+  const [taskId, setTaskId] = useState(null);
+  const [priceUsd, setPriceUsd] = useState(null);
   const [numbers, setNumbers] = useState([]);
-  const [orderedNumbers, setOrderedNumbers] = useState(new Array(10).fill(null));
-
+  const [orderedNumbers, setOrderedNumbers] = useState([]);
+  const [draggedIndex, setDraggedIndex] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [startTime, setStartTime] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
-
   const intervalRef = useRef(null);
-  const draggedRef = useRef(null);
 
-  const [phase, setPhase] = useState("warmup"); // warmup | countdown | task | submitting
+  // 新規：フェーズ管理（warmup → countdown → task → submitting）
+  const [phase, setPhase] = useState("warmup");
   const [countdown, setCountdown] = useState(10);
-  const [bootError, setBootError] = useState("");
 
-  const isDemo = rtIsDemoMode();
-
+  // 練習用の数字（ウォーミングアップ用）
   const [practiceNumbers] = useState([45, 23, 89, 12, 67, 34, 91, 56, 78, 29]);
-  const [practiceOrdered, setPracticeOrdered] = useState(new Array(10).fill(null));
-  const practiceDraggedRef = useRef(null);
+  const [practiceOrdered, setPracticeOrdered] = useState(
+    new Array(10).fill(null),
+  );
+
+  const [waitingForMatch, setWaitingForMatch] = useState(false);
+  const [waitingSubmissionId, setWaitingSubmissionId] = useState(null);
+  const pollIntervalRef = useRef(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sp = new URLSearchParams(window.location.search);
-    const price = sp.get("price");
-    setPriceUsd(toNum(price, 1));
+    const id = getQueryParam("id");
+    const price = getQueryParam("price");
+    if (!id || !price) {
+      navigate("/");
+      return;
+    }
+    setTaskId(id);
+    setPriceUsd(parseFloat(price));
   }, []);
 
-  /* ===============================
-     countdown
-  ================================ */
   useEffect(() => {
-    if (phase !== "countdown") return;
+    if (taskId && phase === "warmup") {
+      loadTask();
+    }
+  }, [taskId, phase]);
 
-    if (countdown > 0) {
+  // カウントダウンタイマー
+  useEffect(() => {
+    if (phase === "countdown" && countdown > 0) {
       const timer = setTimeout(() => {
-        setCountdown((prev) => prev - 1);
+        setCountdown(countdown - 1);
       }, 1000);
       return () => clearTimeout(timer);
+    } else if (phase === "countdown" && countdown === 0) {
+      // カウントダウン終了 → 本番開始
+      setPhase("task");
+      setStartTime(Date.now());
     }
-
-    setPhase("task");
-    setStartTime(Date.now());
-    setElapsedTime(0);
   }, [phase, countdown]);
 
-  /* ===============================
-     timer
-  ================================ */
+  // 本番タイマー（経過時間）
   useEffect(() => {
-    if (phase === "task" && startTime) {
+    if (startTime && phase === "task") {
       intervalRef.current = setInterval(() => {
         setElapsedTime(Date.now() - startTime);
       }, 10);
     }
-
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -115,240 +75,172 @@ export default function TaskPage() {
     };
   }, [startTime, phase]);
 
-  /* ===============================
-     start task
-  ================================ */
-  const loadRealTask = async () => {
-    if (isDemo) {
-      const demoAttemptId = makeDemoAttemptId();
-      const demoNumbers = makeDemoNumbers(10);
-      setAttemptId(demoAttemptId);
-      setNumbers(demoNumbers);
-      setOrderedNumbers(new Array(10).fill(null));
-      return;
-    }
-
-    const token = getAccessToken();
-    if (!token) {
-      navigate(`/login?redirect=${encodeURIComponent(`/task?price=${priceUsd}`)}`);
-      return false;
-    }
-
-    const response = await authenticatedFetch("/api/tasks/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ price: priceUsd }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok || data?.ok === false) {
-      throw new Error(data?.error || "Failed to start task");
-    }
-
-    const newAttemptId = getAttemptIdFromStart(data);
-    const nums = getNumbersFromStart(data);
-
-    if (!newAttemptId) throw new Error("start: missing attempt.id");
-    if (!Array.isArray(nums) || nums.length !== 10) {
-      throw new Error("start: numbers missing (need 10)");
-    }
-
-    setAttemptId(newAttemptId);
-    setNumbers(nums);
-    setOrderedNumbers(new Array(10).fill(null));
-    return true;
-  };
-
-  const handleReadyForReal = async () => {
-    try {
-      setBootError("");
-      const ok = await loadRealTask();
-      if (ok === false) return;
-      setCountdown(10);
-      setPhase("countdown");
-    } catch (error) {
-      setBootError(error?.message || String(error));
-    }
-  };
-
-  /* ===============================
-     auto submit
-  ================================ */
+  // 全てのスロットが埋まったら自動送信
   useEffect(() => {
     if (
       phase === "task" &&
       orderedNumbers.every((n) => n !== null) &&
-      !submitting &&
-      attemptId
+      !submitting
     ) {
       handleSubmit();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderedNumbers, phase, attemptId]);
+  }, [orderedNumbers, phase]);
 
-  /* ===============================
-     drag / drop
-================================ */
-  const handleDragStart = (index, fromSource = true) => {
-    draggedRef.current = { index, fromSource };
+  // Poll for match when waiting
+  useEffect(() => {
+    if (waitingForMatch && waitingSubmissionId) {
+      pollIntervalRef.current = setInterval(async () => {
+        await checkMatchStatus();
+      }, 3000);
+    }
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [waitingForMatch, waitingSubmissionId]);
+
+  const loadTask = async () => {
+    try {
+      const response = await authenticatedFetch("/api/tasks/current");
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load task");
+      }
+
+      setNumbers(data.numbers);
+      setOrderedNumbers(new Array(10).fill(null));
+    } catch (error) {
+      alert(error.message);
+      navigate("/");
+    }
+  };
+
+  const handleDragStart = (e, index, fromSource = true) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/html", e.target.innerHTML);
+    setDraggedIndex({ index, fromSource });
   };
 
   const handleDragOver = (e) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
   };
 
-  const handleDropToSlot = (targetIndex) => {
-    if (!draggedRef.current) return;
+  const handleDropToSlot = (e, targetIndex) => {
+    e.preventDefault();
 
+    if (draggedIndex === null) return;
+
+    // 本番中は全て埋まった後の変更不可（自動送信されるので実質不要だが念のため）
     if (phase === "task" && orderedNumbers.every((n) => n !== null)) {
       return;
     }
 
-    const next = [...orderedNumbers];
+    const isWarmup = phase === "warmup";
+    const currentOrdered = isWarmup
+      ? [...practiceOrdered]
+      : [...orderedNumbers];
 
-    if (draggedRef.current.fromSource) {
-      next[targetIndex] = numbers[draggedRef.current.index];
+    if (draggedIndex.fromSource) {
+      const sourceNumbers = isWarmup ? practiceNumbers : numbers;
+      currentOrdered[targetIndex] = sourceNumbers[draggedIndex.index];
     } else {
-      const srcIndex = draggedRef.current.index;
-      const temp = next[targetIndex];
-      next[targetIndex] = next[srcIndex];
-      next[srcIndex] = temp;
+      const temp = currentOrdered[targetIndex];
+      currentOrdered[targetIndex] = currentOrdered[draggedIndex.index];
+      currentOrdered[draggedIndex.index] = temp;
     }
 
-    setOrderedNumbers(next);
-    draggedRef.current = null;
-  };
-
-  /* ===============================
-     practice drag / drop
-================================ */
-  const handlePracticeDragStart = (index, fromSource = true) => {
-    practiceDraggedRef.current = { index, fromSource };
-  };
-
-  const handlePracticeDropToSlot = (targetIndex) => {
-    if (!practiceDraggedRef.current) return;
-
-    const next = [...practiceOrdered];
-
-    if (practiceDraggedRef.current.fromSource) {
-      next[targetIndex] = practiceNumbers[practiceDraggedRef.current.index];
+    if (isWarmup) {
+      setPracticeOrdered(currentOrdered);
     } else {
-      const srcIndex = practiceDraggedRef.current.index;
-      const temp = next[targetIndex];
-      next[targetIndex] = next[srcIndex];
-      next[srcIndex] = temp;
+      setOrderedNumbers(currentOrdered);
     }
-
-    setPracticeOrdered(next);
-    practiceDraggedRef.current = null;
+    setDraggedIndex(null);
   };
 
-  /* ===============================
-     submit
-  ================================ */
+  const handleReadyForReal = () => {
+    setPhase("countdown");
+    setCountdown(10);
+  };
+
   const handleSubmit = async () => {
-    if (orderedNumbers.some((n) => n === null)) return;
+    if (orderedNumbers.some((n) => n === null)) {
+      return;
+    }
 
     setSubmitting(true);
-    const timeMs = Math.max(0, Date.now() - (startTime || Date.now()));
+    const timeMs = Date.now() - startTime;
 
     try {
-      if (isDemo) {
-        const demoData = {
-          ok: true,
-          mode: "demo",
-          status: "matched",
-          result: "demo",
-          attemptId,
-          timeMs,
-          elapsedMs: timeMs,
-          durationMs: timeMs,
-          orderedNumbers,
-          numbers,
-          priceUsd,
-        };
-
-        navigate(`/results?data=${encodeURIComponent(JSON.stringify(demoData))}`);
-        return;
-      }
-
       const response = await authenticatedFetch("/api/tasks/submit", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          attemptId,
+          taskSetId: parseInt(taskId),
           orderedNumbers,
-          numbers: orderedNumbers,
           timeMs,
-          elapsedMs: timeMs,
-          durationMs: timeMs,
         }),
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
 
-      if (!response.ok || data?.ok === false) {
-        throw new Error(data?.error || "Failed to submit");
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to submit");
       }
 
-      const idForResult = getAttemptIdFromSubmit(data, attemptId);
-
-      if (data?.status === "waiting") {
+      if (data.status === "waiting") {
+        // Start waiting for match
+        setWaitingForMatch(true);
+        setWaitingSubmissionId(data.submissionId);
+        setPhase("waiting");
+      } else {
+        // Immediate match or error
         navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
-        return;
       }
-
-      if (idForResult) {
-        navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
-        return;
-      }
-
-      navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
     } catch (error) {
-      alert(error?.message || String(error));
+      alert(error.message);
       setSubmitting(false);
     }
   };
 
-  /* ===============================
-     error
-  ================================ */
-  if (bootError) {
-    return (
-      <div className="min-h-screen bg-white font-inter flex items-center justify-center p-6">
-        <div className="max-w-[720px] w-full border border-[#F1F1F1] rounded-xl p-6">
-          <div className="text-[16px] font-semibold text-[#2B2B2B] mb-2">Error</div>
-          <pre className="text-[12px] text-[#C33] whitespace-pre-wrap">{bootError}</pre>
+  const checkMatchStatus = async () => {
+    try {
+      const response = await authenticatedFetch(
+        `/api/tasks/check-match?submissionId=${waitingSubmissionId}`,
+      );
 
-          <div className="mt-4 flex gap-3">
-            <button
-              onClick={() => {
-                setBootError("");
-                setPhase("warmup");
-              }}
-              className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A]"
-            >
-              Back
-            </button>
-            <button
-              onClick={handleReadyForReal}
-              className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+      const data = await response.json();
 
-  /* ===============================
-     warmup
-  ================================ */
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to check match");
+      }
+
+      if (data.status === "matched") {
+        // Match found! Redirect to results
+        clearInterval(pollIntervalRef.current);
+        navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
+      } else if (data.status === "timeout") {
+        // Timeout - redirect with timeout message
+        clearInterval(pollIntervalRef.current);
+        navigate(
+          `/results?data=${encodeURIComponent(
+            JSON.stringify({ status: "timeout", message: data.message }),
+          )}`,
+        );
+      }
+      // If still waiting, continue polling
+    } catch (error) {
+      console.error("Failed to check match:", error);
+    }
+  };
+
+  // ウォーミングアップ画面
   if (phase === "warmup") {
     return (
       <div className="min-h-screen bg-white font-inter">
@@ -357,15 +249,9 @@ export default function TaskPage() {
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
               <span className="text-[16px] font-semibold text-[#2B2B2B]">
-                Task Dash {priceUsd ? `- $${priceUsd}` : ""}
+                Task Dash {priceUsd && `- $${priceUsd}`}
               </span>
             </div>
-
-            {isDemo && (
-              <div className="px-3 py-2 rounded-lg bg-[#EFF6FF] text-[#2563FF] text-[12px] font-semibold">
-                DEMO MODE
-              </div>
-            )}
           </div>
         </div>
 
@@ -388,12 +274,17 @@ export default function TaskPage() {
                 task auto-submits immediately
               </li>
               <li>
-                • <strong>No changes after:</strong> You can rearrange while
-                solving, but once final slot is filled it submits
+                • <strong>No changes after:</strong> You cannot rearrange
+                numbers after all slots are filled
               </li>
               <li>
                 • <strong>Speed matters:</strong> Faster + accurate = better
                 rewards
+              </li>
+              <li>
+                • <strong>Fair difficulty:</strong> Numbers are randomly
+                generated (0-99) with controlled patterns to ensure consistent
+                difficulty for all users
               </li>
             </ul>
           </div>
@@ -415,15 +306,15 @@ export default function TaskPage() {
                   <div
                     key={index}
                     onDragOver={handleDragOver}
-                    onDrop={() => handlePracticeDropToSlot(index)}
+                    onDrop={(e) => handleDropToSlot(e, index)}
                     className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
                       num === null
                         ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
                         : "border-[#10B981] bg-[#ECFDF5] text-[#10B981] cursor-move"
                     }`}
                     draggable={num !== null}
-                    onDragStart={() =>
-                      num !== null && handlePracticeDragStart(index, false)
+                    onDragStart={(e) =>
+                      num !== null && handleDragStart(e, index, false)
                     }
                   >
                     {num === null ? index + 1 : num}
@@ -441,7 +332,7 @@ export default function TaskPage() {
                   <div
                     key={index}
                     draggable
-                    onDragStart={() => handlePracticeDragStart(index, true)}
+                    onDragStart={(e) => handleDragStart(e, index, true)}
                     className="h-[80px] bg-white border-2 border-[#E5E5E5] rounded-lg flex items-center justify-center text-[24px] font-semibold text-[#2B2B2B] cursor-move hover:border-[#10B981] hover:bg-[#F8FAFC]"
                   >
                     <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
@@ -465,23 +356,43 @@ export default function TaskPage() {
     );
   }
 
-  /* ===============================
-     countdown
-  ================================ */
+  // カウントダウン画面
   if (phase === "countdown") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#2563FF] to-[#1E40AF] font-inter flex items-center justify-center">
         <div className="text-center">
-          <div className="text-white text-[120px] font-bold mb-6">{countdown}</div>
-          <div className="text-[24px] text-blue-100 font-medium">Get Ready...</div>
+          <div className="text-white text-[120px] font-bold mb-6">
+            {countdown}
+          </div>
+          <div className="text-[24px] text-blue-100 font-medium">
+            Get Ready...
+          </div>
         </div>
       </div>
     );
   }
 
-  /* ===============================
-     task
-  ================================ */
+  // Waiting phase
+  if (phase === "waiting") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#2563FF] to-[#1E40AF] font-inter flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+          <div className="text-[24px] text-white font-semibold mb-2">
+            Waiting for Opponent...
+          </div>
+          <div className="text-[16px] text-blue-100">
+            Looking for a match at ${priceUsd}
+          </div>
+          <div className="text-[14px] text-blue-200 mt-4">
+            Your time: {(elapsedTime / 1000).toFixed(2)}s
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 本番タスク画面
   return (
     <div className="min-h-screen bg-white font-inter">
       <div className="border-b border-[#EDEDED]">
@@ -489,7 +400,7 @@ export default function TaskPage() {
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full"></div>
             <span className="text-[16px] font-semibold text-[#2B2B2B]">
-              Task Dash {priceUsd ? `- $${priceUsd}` : ""}
+              Task Dash {priceUsd && `- $${priceUsd}`}
             </span>
           </div>
 
@@ -509,11 +420,6 @@ export default function TaskPage() {
             all slots are filled.
           </p>
 
-          <div className="text-[12px] text-[#7A7A7A] mb-6">
-            attemptId:{" "}
-            <span className="font-mono text-[#2B2B2B]">{attemptId}</span>
-          </div>
-
           <div className="mb-8">
             <div className="text-[13px] font-medium text-[#2B2B2B] mb-3">
               Your Answer:
@@ -523,15 +429,17 @@ export default function TaskPage() {
                 <div
                   key={index}
                   onDragOver={handleDragOver}
-                  onDrop={() => handleDropToSlot(index)}
+                  onDrop={(e) => handleDropToSlot(e, index)}
                   className={`h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px] font-semibold ${
                     num === null
                       ? "border-[#E5E5E5] bg-[#FAFAFA] text-[#C3C3C3]"
                       : "border-[#2563FF] bg-[#EFF6FF] text-[#2563FF] cursor-move"
                   }`}
                   draggable={num !== null && !submitting}
-                  onDragStart={() =>
-                    num !== null && !submitting && handleDragStart(index, false)
+                  onDragStart={(e) =>
+                    num !== null &&
+                    !submitting &&
+                    handleDragStart(e, index, false)
                   }
                 >
                   {num === null ? index + 1 : num}
@@ -549,7 +457,9 @@ export default function TaskPage() {
                 <div
                   key={index}
                   draggable={!submitting}
-                  onDragStart={() => !submitting && handleDragStart(index, true)}
+                  onDragStart={(e) =>
+                    !submitting && handleDragStart(e, index, true)
+                  }
                   className="h-[80px] bg-white border-2 border-[#E5E5E5] rounded-lg flex items-center justify-center text-[24px] font-semibold text-[#2B2B2B] cursor-move hover:border-[#2563FF] hover:bg-[#F8FAFC]"
                 >
                   <GripVertical size={16} className="text-[#C3C3C3] mr-2" />
