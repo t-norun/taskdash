@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect } from "react";
 
-export default function Page() {
+export default function RootPage() {
   useEffect(() => {
-    window.location.replace("/task");
+    window.location.replace("/balance");
   }, []);
 
   return null;
