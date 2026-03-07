@@ -6,13 +6,10 @@ import { GripVertical } from "lucide-react";
 import {
   getCurrent,
   submitTask,
-  checkMatch,
   isDemoMode as rtIsDemoMode,
 } from "@/utils/runtimeData";
 
-/* ---------------- PRACTICE ---------------- */
-
-function makePracticeNumbers() {
+function makeRandomNumbers() {
   const arr = [];
   while (arr.length < 10) {
     arr.push(Math.floor(Math.random() * 1000));
@@ -27,16 +24,6 @@ function isDescending(arr) {
   return true;
 }
 
-/* ---------------- DEMO ---------------- */
-
-function makeDemoNumbers() {
-  const arr = [];
-  while (arr.length < 10) {
-    arr.push(Math.floor(Math.random() * 1000));
-  }
-  return arr;
-}
-
 export default function TaskPage() {
 
   const [taskId, setTaskId] = useState(null);
@@ -47,9 +34,6 @@ export default function TaskPage() {
 
   const [draggedIndex, setDraggedIndex] = useState(null);
 
-  const [phase, setPhase] = useState("warmup");
-  const [countdown, setCountdown] = useState(10);
-
   const [submitting, setSubmitting] = useState(false);
 
   const [startTime, setStartTime] = useState(null);
@@ -57,25 +41,23 @@ export default function TaskPage() {
 
   const intervalRef = useRef(null);
 
-  /* ---------------- PRACTICE STATE ---------------- */
+  const [phase, setPhase] = useState("warmup");
+  const [countdown, setCountdown] = useState(10);
 
-  const [practicePool, setPracticePool] = useState(makePracticeNumbers());
+  /* practice */
+
+  const [practicePool, setPracticePool] = useState(makeRandomNumbers());
   const [practiceOrdered, setPracticeOrdered] = useState(new Array(10).fill(null));
   const [practiceError, setPracticeError] = useState(null);
 
-  /* ---------------- MATCH ---------------- */
-
-  const [waitingForMatch, setWaitingForMatch] = useState(false);
-  const [waitingSubmissionId, setWaitingSubmissionId] = useState(null);
-  const pollIntervalRef = useRef(null);
-
   const isDemo = rtIsDemoMode();
 
-  /* ---------------- INIT ---------------- */
-
   useEffect(() => {
+
     const attemptId = getQueryParam("attemptId") || getQueryParam("id");
+
     const price = Number(getQueryParam("price"));
+
     const safePrice = Number.isFinite(price) && price > 0 ? price : 1;
 
     setPriceUsd(safePrice);
@@ -86,92 +68,98 @@ export default function TaskPage() {
     }
 
     setTaskId(attemptId);
+
   }, []);
 
   useEffect(() => {
+
     if (taskId && phase === "warmup") {
+
       loadTask();
+
     }
+
   }, [taskId, phase]);
 
-  /* ---------------- COUNTDOWN ---------------- */
-
   useEffect(() => {
+
     if (phase === "countdown" && countdown > 0) {
+
       const timer = setTimeout(() => {
-        setCountdown((prev) => prev - 1);
+
+        setCountdown(prev => prev - 1);
+
       }, 1000);
 
       return () => clearTimeout(timer);
+
     }
 
     if (phase === "countdown" && countdown === 0) {
+
       setPhase("task");
+
       setStartTime(Date.now());
+
     }
+
   }, [phase, countdown]);
 
-  /* ---------------- TIMER ---------------- */
-
   useEffect(() => {
-    if (phase === "task" && startTime) {
+
+    if (startTime && phase === "task") {
+
       intervalRef.current = setInterval(() => {
+
         setElapsedTime(Date.now() - startTime);
+
       }, 10);
-    }
-
-    return () => clearInterval(intervalRef.current);
-  }, [phase, startTime]);
-
-  /* ---------------- PRACTICE CHECK ---------------- */
-
-  useEffect(() => {
-
-    if (phase !== "warmup") return;
-
-    if (practiceOrdered.every((n) => n !== null)) {
-
-      if (!isDescending(practiceOrdered)) {
-        setPracticeError("Incorrect order. Largest → smallest.");
-      } else {
-        setPracticeError(null);
-      }
 
     }
 
-  }, [practiceOrdered, phase]);
+    return () => {
 
-  /* ---------------- TASK SUBMIT ---------------- */
+      if (intervalRef.current) clearInterval(intervalRef.current);
+
+    };
+
+  }, [startTime, phase]);
 
   useEffect(() => {
 
     if (
       phase === "task" &&
-      orderedNumbers.every((n) => n !== null) &&
+      orderedNumbers.every(n => n !== null) &&
       !submitting
     ) {
+
       handleSubmit();
+
     }
 
   }, [orderedNumbers, phase, submitting]);
 
-  /* ---------------- MATCH POLLING ---------------- */
+  /* practice validation */
 
   useEffect(() => {
 
-    if (waitingForMatch && waitingSubmissionId) {
+    if (phase !== "warmup") return;
 
-      pollIntervalRef.current = setInterval(async () => {
-        await checkMatchStatus();
-      }, 800);
+    if (practiceOrdered.every(n => n !== null)) {
+
+      if (!isDescending(practiceOrdered)) {
+
+        setPracticeError("Incorrect order. Sort largest → smallest");
+
+      } else {
+
+        setPracticeError(null);
+
+      }
 
     }
 
-    return () => clearInterval(pollIntervalRef.current);
-
-  }, [waitingForMatch, waitingSubmissionId]);
-
-  /* ---------------- LOAD TASK ---------------- */
+  }, [practiceOrdered]);
 
   const loadTask = async () => {
 
@@ -180,49 +168,56 @@ export default function TaskPage() {
       const current = await getCurrent(taskId);
 
       if (!current?.ok) {
+
         throw new Error(current?.error || "Failed to load task");
+
       }
 
       if (isDemo) {
-        setNumbers(makeDemoNumbers());
+
+        setNumbers(makeRandomNumbers());
+
         setOrderedNumbers(new Array(10).fill(null));
+
         return;
+
       }
 
       const taskNumbers = current?.task?.numbers || current?.numbers || [];
 
       if (!Array.isArray(taskNumbers) || taskNumbers.length !== 10) {
+
         throw new Error("Invalid task data");
+
       }
 
       setNumbers([...taskNumbers]);
+
       setOrderedNumbers(new Array(10).fill(null));
 
     } catch (error) {
 
       alert(error?.message || "Failed to load task");
+
       navigate("/");
 
     }
 
   };
 
-  /* ---------------- DRAG ---------------- */
-
   const handleDragStart = (e, index, fromSource = true) => {
 
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(index));
 
     setDraggedIndex({ index, fromSource });
 
   };
 
   const handleDragOver = (e) => {
-    e.preventDefault();
-  };
 
-  /* ---------------- DROP ---------------- */
+    e.preventDefault();
+
+  };
 
   const handleDropToSlot = (e, targetIndex) => {
 
@@ -232,69 +227,76 @@ export default function TaskPage() {
 
     const isWarmup = phase === "warmup";
 
-    const currentOrdered = isWarmup
-      ? [...practiceOrdered]
-      : [...orderedNumbers];
+    const ordered = isWarmup ? [...practiceOrdered] : [...orderedNumbers];
 
     if (draggedIndex.fromSource) {
 
+      const pool = isWarmup ? [...practicePool] : [...numbers];
+
+      const value = pool[draggedIndex.index];
+
+      pool.splice(draggedIndex.index, 1);
+
+      const prev = ordered[targetIndex];
+
+      ordered[targetIndex] = value;
+
+      if (prev !== null) pool.push(prev);
+
       if (isWarmup) {
 
-        const newPool = [...practicePool];
-        const value = newPool[draggedIndex.index];
+        setPracticePool(pool);
 
-        if (value === undefined) return;
-
-        newPool.splice(draggedIndex.index, 1);
-
-        currentOrdered[targetIndex] = value;
-
-        setPracticePool(newPool);
+        setPracticeOrdered(ordered);
 
       } else {
 
-        const newPool = [...numbers];
-        const value = newPool[draggedIndex.index];
+        setNumbers(pool);
 
-        if (value === undefined) return;
-
-        newPool.splice(draggedIndex.index, 1);
-
-        currentOrdered[targetIndex] = value;
-
-        setNumbers(newPool);
+        setOrderedNumbers(ordered);
 
       }
 
     } else {
 
-      const temp = currentOrdered[targetIndex];
-      currentOrdered[targetIndex] = currentOrdered[draggedIndex.index];
-      currentOrdered[draggedIndex.index] = temp;
+      const temp = ordered[targetIndex];
+
+      ordered[targetIndex] = ordered[draggedIndex.index];
+
+      ordered[draggedIndex.index] = temp;
+
+      if (isWarmup) setPracticeOrdered(ordered);
+
+      else setOrderedNumbers(ordered);
 
     }
-
-    if (isWarmup) setPracticeOrdered(currentOrdered);
-    else setOrderedNumbers(currentOrdered);
 
     setDraggedIndex(null);
 
   };
 
-  /* ---------------- READY ---------------- */
+  const retryPractice = () => {
+
+    setPracticePool(makeRandomNumbers());
+
+    setPracticeOrdered(new Array(10).fill(null));
+
+    setPracticeError(null);
+
+  };
 
   const handleReadyForReal = () => {
 
     setPhase("countdown");
+
     setCountdown(10);
 
   };
 
-  /* ---------------- SUBMIT ---------------- */
-
   const handleSubmit = async () => {
 
-    if (orderedNumbers.some((n) => n === null)) return;
+    if (orderedNumbers.some(n => n === null)) return;
+
     if (!startTime) return;
 
     setSubmitting(true);
@@ -307,108 +309,72 @@ export default function TaskPage() {
         attemptId: taskId,
         priceUsd,
         orderedNumbers,
-        timeMs,
+        timeMs
       });
 
       if (!data?.ok) {
-        throw new Error(data?.error || "Submit failed");
-      }
 
-      if (data.statusCompat === "waiting") {
-
-        setWaitingForMatch(true);
-        setWaitingSubmissionId(data.submissionId);
-        setPhase("waiting");
-
-      } else {
-
-        navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
+        throw new Error(data?.error || "Failed to submit");
 
       }
+
+      navigate("/");
 
     } catch (error) {
 
-      alert(error?.message || "Submit failed");
+      alert(error?.message || "Failed to submit");
+
       setSubmitting(false);
 
     }
 
   };
 
-  /* ---------------- MATCH CHECK ---------------- */
-
-  const checkMatchStatus = async () => {
-
-    try {
-
-      const data = await checkMatch(waitingSubmissionId);
-
-      if (data?.statusCompat === "matched") {
-
-        clearInterval(pollIntervalRef.current);
-
-        navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
-
-      }
-
-    } catch (err) {
-      console.error(err);
-    }
-
-  };
-
-  /* ---------------- UI ---------------- */
+  /* ---------- UI ---------- */
 
   if (phase === "warmup") {
 
     return (
+      <div className="min-h-screen bg-white font-inter">
 
-      <div className="min-h-screen bg-white">
+        <div className="max-w-[800px] mx-auto px-6 py-8">
 
-        <div className="max-w-[800px] mx-auto p-6">
-
-          <h2 className="text-xl font-semibold mb-6">
+          <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-2">
             Practice
-          </h2>
+          </h3>
 
           <div className="grid grid-cols-5 gap-3 mb-6">
 
-            {practiceOrdered.map((num, i) => (
+            {practiceOrdered.map((num, index) => (
 
               <div
-                key={i}
+                key={index}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDropToSlot(e, i)}
-                className="h-[80px] border-2 border-dashed rounded flex items-center justify-center text-xl"
+                onDrop={(e) => handleDropToSlot(e, index)}
+                className="h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px]"
                 draggable={num !== null}
                 onDragStart={(e) =>
-                  num !== null && handleDragStart(e, i, false)
+                  num !== null && handleDragStart(e, index, false)
                 }
               >
-                {num ?? i + 1}
+                {num ?? index + 1}
               </div>
 
             ))}
 
           </div>
 
-          {practiceError && (
-            <div className="text-red-500 mb-4">
-              {practiceError}
-            </div>
-          )}
-
           <div className="grid grid-cols-5 gap-3 mb-6">
 
-            {practicePool.map((num, i) => (
+            {practicePool.map((num, index) => (
 
               <div
-                key={i}
+                key={`${num}-${index}`}
                 draggable
-                onDragStart={(e) => handleDragStart(e, i, true)}
-                className="h-[80px] border rounded flex items-center justify-center text-xl"
+                onDragStart={(e) => handleDragStart(e, index, true)}
+                className="h-[80px] border rounded-lg flex items-center justify-center text-[20px]"
               >
-                <GripVertical size={16} className="mr-2" />
+                <GripVertical size={16} className="mr-2"/>
                 {num}
               </div>
 
@@ -416,95 +382,74 @@ export default function TaskPage() {
 
           </div>
 
-          <button
-            onClick={() => {
-              setPracticePool(makePracticeNumbers());
-              setPracticeOrdered(new Array(10).fill(null));
-              setPracticeError(null);
-            }}
-            className="mr-4 px-4 py-2 bg-gray-200 rounded"
-          >
-            Retry Practice
-          </button>
+          {practiceError && (
 
-          <button
-            onClick={handleReadyForReal}
-            className="px-6 py-2 bg-green-500 text-white rounded"
-          >
-            Ready for Task →
-          </button>
+            <div className="text-red-500 mb-4">
+              {practiceError}
+            </div>
+
+          )}
+
+          <div className="flex gap-4">
+
+            <button
+              onClick={retryPractice}
+              className="px-4 py-2 bg-gray-200 rounded"
+            >
+              Retry Practice
+            </button>
+
+            <button
+              onClick={handleReadyForReal}
+              className="px-6 py-2 bg-green-500 text-white rounded"
+            >
+              Ready for Task →
+            </button>
+
+          </div>
 
         </div>
-
       </div>
-
     );
 
   }
-
-  /* ---------------- COUNTDOWN ---------------- */
 
   if (phase === "countdown") {
 
     return (
-
-      <div className="h-screen flex items-center justify-center text-6xl">
+      <div className="min-h-screen flex items-center justify-center text-6xl">
         {countdown}
       </div>
-
     );
 
   }
-
-  /* ---------------- WAITING ---------------- */
-
-  if (phase === "waiting") {
-
-    return (
-
-      <div className="h-screen flex flex-col items-center justify-center">
-
-        <div className="text-xl mb-4">
-          Waiting for opponent...
-        </div>
-
-        <div>
-          Your time {(elapsedTime / 1000).toFixed(2)}s
-        </div>
-
-      </div>
-
-    );
-
-  }
-
-  /* ---------------- TASK ---------------- */
 
   return (
-
     <div className="min-h-screen bg-white">
 
-      <div className="max-w-[800px] mx-auto p-6">
+      <div className="max-w-[800px] mx-auto px-6 py-8">
 
         <div className="text-right text-xl mb-6">
+
           {(elapsedTime / 1000).toFixed(2)}s
+
         </div>
 
         <div className="grid grid-cols-5 gap-3 mb-6">
 
-          {orderedNumbers.map((num, i) => (
+          {orderedNumbers.map((num, index) => (
 
             <div
-              key={i}
+              key={index}
               onDragOver={handleDragOver}
-              onDrop={(e) => handleDropToSlot(e, i)}
-              className="h-[80px] border-2 border-dashed rounded flex items-center justify-center text-xl"
+              onDrop={(e) => handleDropToSlot(e, index)}
+              className="h-[80px] border-2 border-dashed rounded-lg flex items-center justify-center text-[24px]"
               draggable={num !== null}
               onDragStart={(e) =>
-                num !== null && handleDragStart(e, i, false)
+                num !== null && handleDragStart(e, index, false)
               }
             >
-              {num ?? i + 1}
+              {num ?? index + 1}
             </div>
 
           ))}
@@ -513,15 +458,15 @@ export default function TaskPage() {
 
         <div className="grid grid-cols-5 gap-3">
 
-          {numbers.map((num, i) => (
+          {numbers.map((num, index) => (
 
             <div
-              key={i}
+              key={`${num}-${index}`}
               draggable
-              onDragStart={(e) => handleDragStart(e, i, true)}
-              className="h-[80px] border rounded flex items-center justify-center text-xl"
+              onDragStart={(e) => handleDragStart(e, index, true)}
+              className="h-[80px] border rounded-lg flex items-center justify-center text-[20px]"
             >
-              <GripVertical size={16} className="mr-2" />
+              <GripVertical size={16} className="mr-2"/>
               {num}
             </div>
 
@@ -532,7 +477,6 @@ export default function TaskPage() {
       </div>
 
     </div>
-
   );
 
 }
