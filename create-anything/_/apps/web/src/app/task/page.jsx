@@ -1,10 +1,14 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { navigate, getQueryParam } from "@/utils/navigation";
 import { GripVertical } from "lucide-react";
-import { authenticatedFetch } from "@/utils/auth";
-import { isDemoMode as rtIsDemoMode } from "@/utils/runtimeData";
+import {
+  getCurrent,
+  submitTask,
+  checkMatch,
+  isDemoMode as rtIsDemoMode,
+} from "@/utils/runtimeData";
 
 function makeDemoNumbers() {
   const arr = [];
@@ -14,21 +18,9 @@ function makeDemoNumbers() {
   return arr;
 }
 
-function isFilled(arr) {
-  return Array.isArray(arr) && arr.length === 10 && arr.every((n) => n !== null);
-}
-
-function isCorrectDescending(arr) {
-  if (!isFilled(arr)) return false;
-  for (let i = 0; i < arr.length - 1; i += 1) {
-    if (Number(arr[i]) < Number(arr[i + 1])) return false;
-  }
-  return true;
-}
-
 export default function TaskPage() {
   const [taskId, setTaskId] = useState(null);
-  const [priceUsd, setPriceUsd] = useState(1);
+  const [priceUsd, setPriceUsd] = useState(null);
   const [numbers, setNumbers] = useState([]);
   const [orderedNumbers, setOrderedNumbers] = useState([]);
   const [draggedIndex, setDraggedIndex] = useState(null);
@@ -47,28 +39,14 @@ export default function TaskPage() {
   const [waitingSubmissionId, setWaitingSubmissionId] = useState(null);
   const pollIntervalRef = useRef(null);
 
-  const isDemo = useMemo(() => {
-    try {
-      return rtIsDemoMode();
-    } catch {
-      return false;
-    }
-  }, []);
+  const isDemo = rtIsDemoMode();
 
   useEffect(() => {
     const attemptId = getQueryParam("attemptId") || getQueryParam("id");
-    const priceParam = getQueryParam("price");
-    const parsedPrice = Number(priceParam);
-    const safePrice = Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : 1;
+    const price = Number(getQueryParam("price"));
+    const safePrice = Number.isFinite(price) && price > 0 ? price : 1;
 
     setPriceUsd(safePrice);
-
-    if (isDemo) {
-      setTaskId(attemptId || `demo-${Date.now()}`);
-      setNumbers(makeDemoNumbers());
-      setOrderedNumbers(new Array(10).fill(null));
-      return;
-    }
 
     if (!attemptId) {
       navigate("/");
@@ -76,14 +54,13 @@ export default function TaskPage() {
     }
 
     setTaskId(attemptId);
-  }, [isDemo]);
+  }, []);
 
   useEffect(() => {
-    if (!isDemo && taskId && phase === "warmup") {
+    if (taskId && phase === "warmup") {
       loadTask();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId, phase, isDemo]);
+  }, [taskId, phase]);
 
   useEffect(() => {
     if (phase === "countdown" && countdown > 0) {
@@ -113,47 +90,52 @@ export default function TaskPage() {
   }, [startTime, phase]);
 
   useEffect(() => {
-    if (phase === "task" && isFilled(orderedNumbers) && !submitting) {
+    if (
+      phase === "task" &&
+      orderedNumbers.every((n) => n !== null) &&
+      !submitting
+    ) {
       handleSubmit();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderedNumbers, phase, submitting]);
 
   useEffect(() => {
-    if (!isDemo && waitingForMatch && waitingSubmissionId) {
+    if (waitingForMatch && waitingSubmissionId) {
       pollIntervalRef.current = setInterval(async () => {
         await checkMatchStatus();
-      }, 3000);
+      }, 800);
     }
 
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waitingForMatch, waitingSubmissionId, isDemo]);
+  }, [waitingForMatch, waitingSubmissionId]);
 
   const loadTask = async () => {
     try {
-      const qs = new URLSearchParams();
-      if (taskId) qs.set("attemptId", String(taskId));
-      if (priceUsd != null) qs.set("price", String(priceUsd));
+      const current = await getCurrent(taskId);
 
-      const response = await authenticatedFetch(
-        `/api/tasks/current${qs.toString() ? `?${qs.toString()}` : ""}`
-      );
-      const text = await response.text();
+      if (!current?.ok) {
+        throw new Error(current?.error || "Failed to load task");
+      }
 
-      if (!response.ok) throw new Error(text || "Failed to load task");
-      if (text.startsWith("<")) throw new Error("Expected JSON but got HTML");
+      if (isDemo) {
+        setNumbers(makeDemoNumbers());
+        setOrderedNumbers(new Array(10).fill(null));
+        return;
+      }
 
-      const data = JSON.parse(text);
-      const nextNumbers = Array.isArray(data?.numbers) ? data.numbers : [];
+      const taskNumbers = Array.isArray(current?.task?.numbers)
+        ? current.task.numbers
+        : Array.isArray(current?.numbers)
+          ? current.numbers
+          : [];
 
-      if (!Array.isArray(nextNumbers) || nextNumbers.length !== 10) {
+      if (!Array.isArray(taskNumbers) || taskNumbers.length !== 10) {
         throw new Error("Invalid task data");
       }
 
-      setNumbers(nextNumbers);
+      setNumbers(taskNumbers);
       setOrderedNumbers(new Array(10).fill(null));
     } catch (error) {
       alert(error?.message || "Failed to load task");
@@ -175,8 +157,8 @@ export default function TaskPage() {
   const handleDropToSlot = (e, targetIndex) => {
     e.preventDefault();
     if (draggedIndex === null) return;
-    if (submitting) return;
-    if (phase === "task" && isFilled(orderedNumbers)) return;
+
+    if (phase === "task" && orderedNumbers.every((n) => n !== null)) return;
 
     const isWarmup = phase === "warmup";
     const currentOrdered = isWarmup ? [...practiceOrdered] : [...orderedNumbers];
@@ -197,70 +179,30 @@ export default function TaskPage() {
   };
 
   const handleReadyForReal = () => {
-    if (isDemo && (!Array.isArray(numbers) || numbers.length !== 10)) {
-      setNumbers(makeDemoNumbers());
-      setOrderedNumbers(new Array(10).fill(null));
-    }
     setPhase("countdown");
     setCountdown(10);
   };
 
   const handleSubmit = async () => {
-    if (!isFilled(orderedNumbers)) return;
+    if (orderedNumbers.some((n) => n === null)) return;
     if (!startTime) return;
 
     setSubmitting(true);
     const timeMs = Date.now() - startTime;
 
-    if (isDemo) {
-      const correct = isCorrectDescending(orderedNumbers);
-      const opponentTimeMs = Math.max(2500, Math.floor(3500 + Math.random() * 7000));
-      const youWon = correct && timeMs <= opponentTimeMs;
-      const resultPayload = {
-        ok: true,
-        mode: "demo",
-        status: "matched",
+    try {
+      const data = await submitTask({
         attemptId: taskId,
         priceUsd,
         orderedNumbers,
-        sourceNumbers: numbers,
-        correct,
-        yourTimeMs: timeMs,
-        opponentTimeMs,
-        winner: youWon ? "you" : "opponent",
-        result: youWon ? "win" : "lose",
-        message: correct
-          ? youWon
-            ? "Demo win"
-            : "Demo loss"
-          : "Incorrect order",
-      };
-
-      navigate(`/results?data=${encodeURIComponent(JSON.stringify(resultPayload))}`);
-      return;
-    }
-
-    try {
-      const numericTaskSetId = Number(taskId);
-      const payload = {
-        attemptId: taskId,
-        taskId,
-        taskSetId: Number.isFinite(numericTaskSetId) ? numericTaskSetId : undefined,
-        orderedNumbers,
         timeMs,
-      };
-
-      const response = await authenticatedFetch("/api/tasks/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
       });
 
-      const data = await response.json().catch(() => ({}));
+      if (!data?.ok) {
+        throw new Error(data?.error || "Failed to submit");
+      }
 
-      if (!response.ok) throw new Error(data?.error || "Failed to submit");
-
-      if (data.status === "waiting") {
+      if (data.statusCompat === "waiting" || data.status === "submitted") {
         setWaitingForMatch(true);
         setWaitingSubmissionId(data.submissionId);
         setPhase("waiting");
@@ -275,27 +217,39 @@ export default function TaskPage() {
 
   const checkMatchStatus = async () => {
     try {
-      const response = await authenticatedFetch(
-        `/api/tasks/check-match?submissionId=${encodeURIComponent(String(waitingSubmissionId))}`
-      );
+      const data = await checkMatch(waitingSubmissionId);
 
-      const data = await response.json().catch(() => ({}));
+      if (!data?.ok) {
+        throw new Error(data?.error || "Failed to check match");
+      }
 
-      if (!response.ok) throw new Error(data?.error || "Failed to check match");
-
-      if (data.status === "matched") {
+      if (data.statusCompat === "matched") {
         clearInterval(pollIntervalRef.current);
-        navigate(`/results?data=${encodeURIComponent(JSON.stringify(data))}`);
-      } else if (data.status === "timeout") {
-        clearInterval(pollIntervalRef.current);
-        navigate(
-          `/results?data=${encodeURIComponent(
-            JSON.stringify({
-              status: "timeout",
-              message: data.message,
-            })
-          )}`
-        );
+
+        let resultPayload = data;
+
+        if (isDemo && data.demoMatch) {
+          resultPayload = {
+            mode: "demo",
+            status: "matched",
+            result: data.demoMatch.outcome,
+            priceUsd: data.demoMatch.priceUsd,
+            payout: (data.demoMatch.userPayoutCents || 0) / 100,
+            newBalance: undefined,
+            yourTimeMs: data.demoMatch.player?.timeMs ?? null,
+            opponentTimeMs: data.demoMatch.cpu?.timeMs ?? null,
+            playerScore: data.demoMatch.player?.score,
+            cpuScore: data.demoMatch.cpu?.score,
+            cpuName: data.demoMatch.cpu?.name || "CPU",
+            deltaUsd: data.demoMatch.deltaUsd,
+            platformFeeUsd: (data.demoMatch.platformFeeCents || 0) / 100,
+            submissionId: data.submissionId,
+            matchId: data.matchId,
+            demoMatch: data.demoMatch,
+          };
+        }
+
+        navigate(`/results?data=${encodeURIComponent(JSON.stringify(resultPayload))}`);
       }
     } catch (error) {
       console.error("Failed to check match:", error);
@@ -310,8 +264,7 @@ export default function TaskPage() {
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full" />
               <span className="text-[16px] font-semibold text-[#2B2B2B]">
-                Task Dash {priceUsd ? `- $${priceUsd}` : ""}
-                {isDemo ? " (Demo)" : ""}
+                Task Dash {priceUsd && `- $${priceUsd}`} {isDemo ? "(Demo)" : ""}
               </span>
             </div>
           </div>
@@ -323,36 +276,12 @@ export default function TaskPage() {
               Task Rules
             </h2>
             <ul className="space-y-2 text-[14px] text-[#78350F]">
-              <li>
-                • <strong>Goal:</strong> Sort 10 numbers in descending order
-                (largest → smallest)
-              </li>
-              <li>
-                • <strong>Method:</strong> Drag numbers from the pool into all
-                10 slots
-              </li>
-              <li>
-                • <strong>Important:</strong> Once all slots are filled, the
-                task auto-submits immediately
-              </li>
-              <li>
-                • <strong>No changes after:</strong> You cannot rearrange
-                numbers after all slots are filled
-              </li>
-              <li>
-                • <strong>Speed matters:</strong> Faster + accurate = better
-                rewards
-              </li>
-              <li>
-                • <strong>Fair difficulty:</strong> Numbers are randomly
-                generated with controlled difficulty
-              </li>
-              {isDemo && (
-                <li>
-                  • <strong>Demo:</strong> No login required. No real payment or
-                  real matching is used
-                </li>
-              )}
+              <li>• <strong>Goal:</strong> Sort 10 numbers in descending order (largest → smallest)</li>
+              <li>• <strong>Method:</strong> Drag numbers from the pool into all 10 slots</li>
+              <li>• <strong>Important:</strong> Once all slots are filled, the task auto-submits immediately</li>
+              <li>• <strong>No changes after:</strong> You cannot rearrange numbers after all slots are filled</li>
+              <li>• <strong>Speed matters:</strong> Faster + accurate = better rewards</li>
+              <li>• <strong>Demo:</strong> In demo mode, matching is handled by local CPU logic</li>
             </ul>
           </div>
 
@@ -414,7 +343,7 @@ export default function TaskPage() {
                 onClick={handleReadyForReal}
                 className="w-full h-[56px] bg-[#10B981] text-white text-[16px] font-semibold rounded-lg hover:bg-[#059669]"
               >
-                {isDemo ? "Start Demo Task →" : "Ready for Real Task →"}
+                Ready for Task →
               </button>
             </div>
           </div>
@@ -444,10 +373,10 @@ export default function TaskPage() {
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-6" />
           <div className="text-[24px] text-white font-semibold mb-2">
-            Waiting for Opponent...
+            Waiting for {isDemo ? "CPU Match..." : "Opponent..."}
           </div>
           <div className="text-[16px] text-blue-100">
-            Looking for a match at ${priceUsd}
+            Processing at ${priceUsd}
           </div>
           <div className="text-[14px] text-blue-200 mt-4">
             Your time: {(elapsedTime / 1000).toFixed(2)}s
@@ -464,8 +393,7 @@ export default function TaskPage() {
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full" />
             <span className="text-[16px] font-semibold text-[#2B2B2B]">
-              Task Dash {priceUsd ? `- $${priceUsd}` : ""}
-              {isDemo ? " (Demo)" : ""}
+              Task Dash {priceUsd && `- $${priceUsd}`} {isDemo ? "(Demo)" : ""}
             </span>
           </div>
 
@@ -545,4 +473,4 @@ export default function TaskPage() {
       </div>
     </div>
   );
-}               
+}
