@@ -1,4 +1,3 @@
-// apps/web/src/app/home/ui/RecentResultsPanel.jsx
 "use client";
 
 import React from "react";
@@ -7,7 +6,6 @@ export default function RecentResultsPanel({
   recentLoading,
   recentError,
   recentMatches,
-  isDemo,
   fmtWhenShort,
   fmtElapsed,
   centsToUsd,
@@ -23,106 +21,63 @@ export default function RecentResultsPanel({
 
   const items = Array.isArray(recentMatches) ? recentMatches : [];
 
-  if (items.length === 0) {
+  if (!items.length) {
     return <div className="text-[13px] text-[#7A7A7A] mt-4">No recent results yet.</div>;
   }
 
   return (
     <div className="mt-5 grid grid-cols-1 gap-3">
       {items.map((it, idx) => {
-        const id = it.id || it.matchId || it.submissionId || it.attemptId || idx;
-        const outcome = String(it.outcome || "").toLowerCase();
-        const when = it.settledAt || it.createdAt || it.updatedAt || null;
+        const id = it.matchId || it.submissionId || idx;
 
-        const priceUsd =
-          typeof it.priceUsd === "number"
-            ? it.priceUsd
-            : typeof it.stakeCents === "number"
-            ? centsToUsd(it.stakeCents)
-            : null;
+        const youScore = Number(it.playerScore ?? 0);
+        const oppScore = Number(it.cpuScore ?? 0);
 
-        const youScore =
-          it.my && typeof it.my.score === "number" ? it.my.score : it.playerScore;
+        const youTime = it.playerTimeMs ?? null;
+        const oppTime = it.cpuTimeMs ?? null;
 
-        const peerScore =
-          it.opponent && typeof it.opponent.score === "number"
-            ? it.opponent.score
-            : it.cpuScore;
+        const diff = youScore - oppScore;
 
-        const youTimeMs =
-          it.my && typeof it.my.timeMs === "number" ? it.my.timeMs : it.playerTimeMs;
-
-        const peerTimeMs =
-          it.opponent && typeof it.opponent.timeMs === "number"
-            ? it.opponent.timeMs
-            : it.cpuTimeMs;
-
-        const badge =
-          outcome === "win"
-            ? "Win"
-            : outcome === "lose"
-            ? "Lose"
-            : outcome === "tie"
-            ? "Tie"
-            : outcome
-            ? outcome
-            : "-";
+        let label = "Tie";
+        if (diff > 0) label = "Higher Ranked";
+        if (diff < 0) label = "Lower Ranked";
 
         return (
-          <div key={String(id)} className="border border-[#F1F1F1] rounded-xl p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[13px] font-semibold text-[#2B2B2B]">
-                  Result: <span className="font-bold">{badge}</span>
-                  {priceUsd != null ? (
-                    <span className="text-[#7A7A7A] font-medium">
-                      {" "}
-                      · Tier ${Number(priceUsd).toFixed(2)}
-                    </span>
-                  ) : null}
-                </div>
+          <div key={id} className="border border-[#F1F1F1] rounded-xl p-4">
 
-                <div className="text-[12px] text-[#7A7A7A] mt-1">
-                  {when ? fmtWhenShort(when) : "-"} · ID: {shortId(id)}
-                </div>
-              </div>
+            <div className="text-[13px] font-semibold text-[#2B2B2B]">
+              Evaluation Result: <span className="font-bold">{label}</span>
+            </div>
 
-              {!isDemo && it.matchId ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    (window.location.href = `/match?matchId=${encodeURIComponent(
-                      String(it.matchId)
-                    )}`)
-                  }
-                  className="shrink-0 h-[36px] px-4 rounded-lg border border-[#E5E5E5] text-[12px] font-semibold text-[#2B2B2B] hover:border-[#2563FF]"
-                >
-                  Open
-                </button>
-              ) : null}
+            <div className="text-[12px] text-[#7A7A7A] mt-1">
+              Score Difference: {diff >= 0 ? "+" : ""}{diff}
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-3">
+
               <div className="rounded-lg border border-[#F1F1F1] p-3">
                 <div className="text-[12px] text-[#7A7A7A]">You</div>
                 <div className="text-[14px] font-semibold text-[#2B2B2B] mt-1">
-                  Score: {youScore != null ? String(youScore) : "-"} · Time:{" "}
-                  {youTimeMs != null ? fmtElapsed(youTimeMs) : "-"}
+                  Score: {youScore} · Time: {youTime ? fmtElapsed(youTime) : "-"}
                 </div>
               </div>
 
               <div className="rounded-lg border border-[#F1F1F1] p-3">
                 <div className="text-[12px] text-[#7A7A7A]">Opponent</div>
                 <div className="text-[14px] font-semibold text-[#2B2B2B] mt-1">
-                  Score: {peerScore != null ? String(peerScore) : "-"} · Time:{" "}
-                  {peerTimeMs != null ? fmtElapsed(peerTimeMs) : "-"}
+                  Score: {oppScore} · Time: {oppTime ? fmtElapsed(oppTime) : "-"}
                 </div>
               </div>
+
             </div>
+
+            <div className="text-[12px] text-[#7A7A7A] mt-2">
+              {fmtWhenShort(it.createdAt)} · ID: {shortId(id)}
+            </div>
+
           </div>
         );
       })}
     </div>
   );
 }
-
