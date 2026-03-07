@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, RefreshCw, BookOpen } from "lucide-react";
 import { navigate } from "@/utils/navigation";
 import { authenticatedFetch, getAccessToken } from "@/utils/auth";
+import { isDemoMode as rtIsDemoMode } from "@/utils/runtimeData";
 
 /* ===============================
    helpers
@@ -33,6 +34,76 @@ const getAttemptIdFromSubmit = (data, fallbackAttemptId) =>
       ""
   );
 
+function makeDemoAttemptId() {
+  return `demo-attempt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function makeDemoResultId() {
+  return `demo-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function makeDemoNumbers(count = 10) {
+  const set = new Set();
+  while (set.size < count) {
+    set.add(Math.floor(Math.random() * 900) + 100);
+  }
+  return Array.from(set);
+}
+
+function safeLocalSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
+function safeLocalGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function saveDemoResult(payload) {
+  const resultId = payload?.id || makeDemoResultId();
+  const record = {
+    ok: true,
+    mode: "demo",
+    id: resultId,
+    attemptId: payload?.attemptId || "",
+    price: toNum(payload?.price, 1),
+    timeMs: toNum(payload?.timeMs, 0),
+    elapsedMs: toNum(payload?.elapsedMs, 0),
+    durationMs: toNum(payload?.durationMs, 0),
+    numbers: Array.isArray(payload?.numbers) ? payload.numbers : [],
+    orderedNumbers: Array.isArray(payload?.orderedNumbers) ? payload.orderedNumbers : [],
+    submittedAt: Date.now(),
+    result: "demo",
+  };
+
+  safeLocalSet("lastSubmissionId", resultId);
+  safeLocalSet("taskdash_v2_submissionId", resultId);
+  safeLocalSet("taskdash_submissionId", resultId);
+  safeLocalSet("taskdash_demo_last_result_id", resultId);
+  safeLocalSet("taskdash_demo_last_result", JSON.stringify(record));
+
+  const byIdKey = `taskdash_demo_result_${resultId}`;
+  safeLocalSet(byIdKey, JSON.stringify(record));
+
+  const existingRaw = safeLocalGet("taskdash_demo_results");
+  let arr = [];
+  try {
+    arr = existingRaw ? JSON.parse(existingRaw) : [];
+    if (!Array.isArray(arr)) arr = [];
+  } catch {
+    arr = [];
+  }
+  arr.unshift(record);
+  safeLocalSet("taskdash_demo_results", JSON.stringify(arr.slice(0, 20)));
+
+  return resultId;
+}
+
 /* ===============================
    TaskPage
 ================================ */
@@ -53,6 +124,7 @@ export default function TaskPage() {
   const draggedIndexRef = useRef(null);
 
   const [price, setPrice] = useState(1);
+  const isDemo = rtIsDemoMode();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -69,15 +141,28 @@ export default function TaskPage() {
     setBootError("");
     setPhase("loading");
 
-    const token = getAccessToken();
-    if (!token) {
-      throw new Error("missing taskdash_access_token");
-    }
-
     const actualPrice = toNum(
       forcedPrice != null ? forcedPrice : price,
       1
     );
+
+    if (isDemo) {
+      const demoAttemptId = makeDemoAttemptId();
+      const demoNumbers = makeDemoNumbers(10);
+
+      setAttemptId(demoAttemptId);
+      setNumbers(demoNumbers);
+      setOrderedNumbers(Array(10).fill(null));
+      setSelectedPick(null);
+      setStartTime(Date.now());
+      setPhase("task");
+      return;
+    }
+
+    const token = getAccessToken();
+    if (!token) {
+      throw new Error("missing taskdash_access_token");
+    }
 
     const r = await authenticatedFetch("/api/tasks/start", {
       method: "POST",
@@ -118,10 +203,12 @@ export default function TaskPage() {
 
     (async () => {
       try {
-        const token = getAccessToken();
-        if (!token) {
-          navigate(`/login?redirect=${encodeURIComponent(`/task?price=${nextPrice}`)}`);
-          return;
+        if (!isDemo) {
+          const token = getAccessToken();
+          if (!token) {
+            navigate(`/login?redirect=${encodeURIComponent(`/task?price=${nextPrice}`)}`);
+            return;
+          }
         }
 
         await startTask(nextPrice);
@@ -133,7 +220,7 @@ export default function TaskPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isDemo]);
 
   /* ===============================
      drag & drop
@@ -198,13 +285,28 @@ export default function TaskPage() {
       try {
         setSubmitting(true);
 
+        const timeMs = Math.max(0, Date.now() - startTime);
+        const answer = orderedNumbers.map((n) => Number(n));
+
+        if (isDemo) {
+          const resultId = saveDemoResult({
+            id: makeDemoResultId(),
+            attemptId,
+            price,
+            timeMs,
+            elapsedMs: timeMs,
+            durationMs: timeMs,
+            numbers,
+            orderedNumbers: answer,
+          });
+          navigate(`/result/${resultId}`);
+          return;
+        }
+
         const token = getAccessToken();
         if (!token) {
           throw new Error("missing taskdash_access_token");
         }
-
-        const timeMs = Math.max(0, Date.now() - startTime);
-        const answer = orderedNumbers.map((n) => Number(n));
 
         const r = await authenticatedFetch("/api/tasks/submit", {
           method: "POST",
@@ -233,7 +335,7 @@ export default function TaskPage() {
         setSubmitting(false);
       }
     })();
-  }, [orderedNumbers, phase, submitting, attemptId, startTime]);
+  }, [orderedNumbers, phase, submitting, attemptId, startTime, isDemo, price, numbers]);
 
   /* ===============================
      derived
@@ -279,7 +381,7 @@ export default function TaskPage() {
                   await startTask();
                 } catch (e) {
                   const msg = e?.message ?? String(e);
-                  if (msg.includes("missing taskdash_access_token")) {
+                  if (!isDemo && msg.includes("missing taskdash_access_token")) {
                     navigate(`/login?redirect=${encodeURIComponent(`/task?price=${price}`)}`);
                     return;
                   }
@@ -308,6 +410,12 @@ export default function TaskPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {isDemo && (
+              <div className="px-3 py-2 rounded-lg bg-[#EFF6FF] text-[#2563FF] text-[12px] font-semibold">
+                DEMO MODE
+              </div>
+            )}
+
             <button
               onClick={() => setShowResetModal(true)}
               disabled={submitting}
