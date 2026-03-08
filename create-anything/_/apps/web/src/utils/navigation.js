@@ -42,3 +42,20 @@ export function navigate(to, fallback = "/") {
 
   window.location.assign(dest);
 }
+export function goReal(to = "/") {
+  try {
+    localStorage.setItem("taskdash_mode", "real");
+  } catch {}
+  if (typeof window !== "undefined") {
+    window.location.href = to;
+  }
+}
+
+export function goDemo(to = "/") {
+  try {
+    localStorage.setItem("taskdash_mode", "demo");
+  } catch {}
+  if (typeof window !== "undefined") {
+    window.location.href = to;
+  }
+}
