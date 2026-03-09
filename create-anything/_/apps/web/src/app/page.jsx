@@ -1597,13 +1597,13 @@ export default function HomePage() {
                 className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
               >
                 Cancel
-              <button
-                onClick={() => setShowWithdrawModal(true)}
-                disabled={isDemoModeSafe() || Number(availableUsd || 0) < 1}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg hover:border-[#2563FF] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Withdraw
               </button>
+
+              <button
+                onClick={handleWithdraw}
+                disabled={processingWithdraw}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+              >
                 {processingWithdraw ? "Processing..." : "Withdraw"}
               </button>
             </div>
