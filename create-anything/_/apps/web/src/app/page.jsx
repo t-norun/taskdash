@@ -11,6 +11,7 @@ import {
   isDemoMode as rtIsDemoMode,
   getBalance,
   getPlatformBalance,
+  acceptJob,
   listWaiting,
   checkMatch,
   recentResults,
@@ -22,11 +23,13 @@ import {
   adminPaypalPayout,
 } from "../utils/runtimeData";
 
+// ✅ extracted helpers/components
 import { fmtElapsed, fmtWhenShort, fmtRemainingHm, centsToUsd, fmtUsd } from "./home/logic/format";
 import { readWaitingList, writeWaitingList, dedupeWaitingList } from "./home/logic/storageWaiting";
 import { readRefundedList, writeRefundedList, dedupeRefundedList } from "./home/logic/storageRefunded";
 import AdminPlatformBalance from "./home/ui/AdminPlatformBalance";
 
+// ✅ extracted tab panels
 import RecentResultsPanel from "./home/ui/RecentResultsPanel";
 import WaitingPanel from "./home/ui/WaitingPanel";
 import NotCompletedPanel from "./home/ui/NotCompletedPanel";
@@ -45,6 +48,7 @@ const safeNavigate = (to) => {
     if (s === "/undefined" || s.startsWith("/undefined?")) return navigate("/");
     return navigate(s);
   } catch {
+    // 最後の保険
     try {
       window.location.href = "/";
     } catch {}
@@ -56,6 +60,10 @@ const safeNavigate = (to) => {
 ===================================================== */
 
 const MODE_KEY = "taskdash_mode";
+
+const LAST_SUBMIT_KEY = "lastSubmissionId";
+const LEGACY_SUBMISSION_KEYS = ["taskdash_v2_submissionId", "lastSubmissionId", "taskdash_submissionId"];
+
 const PRICE_OPTIONS = [1, 5, 10, 20, 50];
 
 /* =====================================================
@@ -142,7 +150,7 @@ function computeBackoffMs(elapsedMs) {
 function shortId(id) {
   const s = String(id || "");
   if (!s) return "";
-  return s.length <= 12 ? s : `${s.slice(0, 4)}窶ｦ${s.slice(-4)}`;
+  return s.length <= 12 ? s : `${s.slice(0, 4)}…${s.slice(-4)}`;
 }
 
 function statusUpper(it) {
@@ -173,25 +181,12 @@ function whenOfItem(it) {
   }
 }
 
-function normalizePriceFromWaitingItem(it) {
-  const stakeCents =
-    it && it.stakeCents != null && Number.isFinite(Number(it.stakeCents)) ? Number(it.stakeCents) : null;
-
-  const priceUsd =
-    it && it.priceUsd != null && Number.isFinite(Number(it.priceUsd))
-      ? Number(it.priceUsd)
-      : stakeCents != null
-      ? stakeCents / 100
-      : null;
-
-  return priceUsd;
-}
-
 /* =====================================================
    runtime call adapters (signature drift safe)
 ===================================================== */
 
 async function callPaypalPayout(amountCents, email) {
+  // runtimeData が (amountCents, email, requestId) を要求する版でも落とさない
   try {
     if (typeof paypalPayout !== "function") return { ok: false, error: "paypalPayout not available" };
     if (paypalPayout.length >= 3) {
@@ -211,17 +206,21 @@ async function callPaypalPayout(amountCents, email) {
 export default function HomePage() {
   const isDemo = isDemoModeSafe();
 
+  // refs
   const pollTimerRef = useRef(null);
   const cancelledRef = useRef(false);
   const lastSigRef = useRef("");
   const waitingRef = useRef([]);
   const pollOnceRef = useRef(null);
 
+  // auth / user
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // admin modal
   const [showAdmin, setShowAdmin] = useState(false);
 
+  // ui state
   const [selectedPrice, setSelectedPrice] = useState(() => {
     const v = PRICE_OPTIONS && PRICE_OPTIONS[0];
     return v == null ? null : Number(v);
@@ -237,37 +236,48 @@ export default function HomePage() {
 
   const [refundedList, setRefundedList] = useState([]);
 
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // recent results
   const [recentMatches, setRecentMatches] = useState([]);
   const [recentLoading, setRecentLoading] = useState(false);
   const [recentError, setRecentError] = useState(null);
 
+  // add funds
   const [showAddFundsModal, setShowAddFundsModal] = useState(false);
   const [addFundsAmount, setAddFundsAmount] = useState(10);
   const [processingPayment, setProcessingPayment] = useState(false);
 
+  // withdraw (user)
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [paypalEmail, setPaypalEmail] = useState("");
   const [processingWithdraw, setProcessingWithdraw] = useState(false);
 
+  // "Refund in" 用（60秒更新）
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  const [activeTab, setActiveTab] = useState("results");
+  // tabs
+  const [activeTab, setActiveTab] = useState("results"); // results | waiting | notCompleted | refunded
   const [waitingPriceFilter, setWaitingPriceFilter] = useState("all");
 
+  // admin guard
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminChecked, setAdminChecked] = useState(false);
   const [platformBalanceUsd, setPlatformBalanceUsd] = useState(null);
 
+  // Not Completed
   const [forfeitedItems, setForfeitedItems] = useState([]);
   const [forfeitedError, setForfeitedError] = useState(null);
   const [forfeitedLoading, setForfeitedLoading] = useState(false);
 
+  // Admin withdraw
   const [adminWithdrawEmail, setAdminWithdrawEmail] = useState("");
   const [adminWithdrawUsd, setAdminWithdrawUsd] = useState("1.00");
   const [adminWithdrawing, setAdminWithdrawing] = useState(false);
   const [adminWithdrawMsg, setAdminWithdrawMsg] = useState("");
 
+  // ✅ 未ログインは demo を優先（URLに指定がない時）
   useEffect(() => {
     const urlMode = getModeFromUrl();
     if (urlMode) return;
@@ -288,14 +298,18 @@ export default function HomePage() {
     }
   }, []);
 
+  // keep refs updated
   useEffect(() => {
     waitingRef.current = Array.isArray(waitingList) ? waitingList : [];
   }, [waitingList]);
 
+  // demo では results 固定
   useEffect(() => {
     if (isDemo && activeTab !== "results") setActiveTab("results");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo, activeTab]);
 
+  // waiting remaining tick
   useEffect(() => {
     if (isDemo) return;
     if (!waitingList || waitingList.length === 0) return;
@@ -303,6 +317,7 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, [waitingList.length, isDemo]);
 
+  // URL mode sync
   useEffect(() => {
     const urlMode = getModeFromUrl();
     if (urlMode) setModeSafe(urlMode);
@@ -310,17 +325,22 @@ export default function HomePage() {
       const lsMode = getModeFromStorage();
       if (!lsMode) setModeSafe(getModeSafe());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // redirect paypal token param -> /paypal-success
   useEffect(() => {
     const token = getQueryParam("token");
     if (token) safeNavigate(`/paypal-success?token=${encodeURIComponent(token)}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // selectedPrice guard
   useEffect(() => {
     if (selectedPrice != null && !PRICE_OPTIONS.includes(Number(selectedPrice))) setSelectedPrice(null);
   }, [selectedPrice]);
 
+  // ✅ Admin判定（Demo/未ログインは絶対false）
   useEffect(() => {
     let mounted = true;
 
@@ -341,7 +361,6 @@ export default function HomePage() {
       } catch {
         authed = false;
       }
-
       if (!authed) {
         if (!mounted) return;
         setAdminChecked(true);
@@ -371,11 +390,13 @@ export default function HomePage() {
     };
   }, [isDemo]);
 
+  // ✅ Adminじゃないなら閉じる（保険）
   useEffect(() => {
     if (!adminChecked) return;
     if (!isAdmin) setShowAdmin(false);
   }, [adminChecked, isAdmin]);
 
+  // ✅ Escで閉じる
   useEffect(() => {
     if (!showAdmin) return;
     const onKey = (e) => {
@@ -396,12 +417,12 @@ export default function HomePage() {
     }
   }, []);
 
+  // auth check
   const checkAuth = useCallback(async () => {
     if (isDemoModeSafe()) {
       setUser({ id: "demo", userId: "demo", level: 1 });
       return true;
     }
-
     try {
       const ok = await Promise.resolve(isAuthenticated()).catch(() => false);
       if (!ok) return false;
@@ -415,6 +436,7 @@ export default function HomePage() {
     }
   }, []);
 
+  // load data: balance
   const loadData = useCallback(async () => {
     try {
       const b = await getBalance();
@@ -442,15 +464,20 @@ export default function HomePage() {
     try {
       const list = Array.isArray(maybeList) ? maybeList : readWaitingList();
       const counts = {};
-
       for (const it of list) {
-        const priceUsd = normalizePriceFromWaitingItem(it);
-        if (priceUsd == null) continue;
+        const stakeCents = it && it.stakeCents != null && Number.isFinite(Number(it.stakeCents)) ? Number(it.stakeCents) : null;
 
+        const priceUsd =
+          it && it.priceUsd != null && Number.isFinite(Number(it.priceUsd))
+            ? Number(it.priceUsd)
+            : stakeCents != null
+            ? stakeCents / 100
+            : null;
+
+        if (priceUsd == null) continue;
         const key = String(Math.round(priceUsd));
         counts[key] = Number(counts[key] || 0) + 1;
       }
-
       setWaitingCounts(counts);
     } catch (e) {
       console.error("loadWaitingCounts error:", e);
@@ -486,6 +513,7 @@ export default function HomePage() {
     }
   }, []);
 
+  // recent
   const loadRecent = useCallback(async () => {
     setRecentLoading(true);
     setRecentError(null);
@@ -502,11 +530,13 @@ export default function HomePage() {
 
       const raw = (Array.isArray(rr.items) && rr.items) || (Array.isArray(rr.results) && rr.results) || [];
 
+      // real は加工しない
       if (!demo) {
         setRecentMatches(raw);
         return;
       }
 
+      // demo は最低限 “表示が崩れない形” に寄せる
       const items = raw.map((r, idx) => {
         const idBase = r.matchId || r.submissionId || r.attemptId || `demo_${idx}`;
         const outcome = String(r.outcome || "win").toLowerCase();
@@ -535,7 +565,6 @@ export default function HomePage() {
   const refreshAll = useCallback(async () => {
     await Promise.resolve(loadData()).catch(() => {});
     await Promise.resolve(loadRecent()).catch(() => {});
-
     if (!isDemoModeSafe()) {
       await Promise.resolve(loadForfeited()).catch(() => {});
       await Promise.resolve(loadWaitingCounts(readWaitingList())).catch(() => {});
@@ -547,18 +576,47 @@ export default function HomePage() {
     }
   }, [loadData, loadRecent, loadForfeited, loadWaitingCounts]);
 
-  const handleStartPractice = useCallback(() => {
+  const handleAcceptJob = useCallback(() => {
     if (!selectedPrice) {
-      alert("Please select a task tier first.");
+      alert("Please select an entry fee first");
       return;
     }
-
     const selectedUsd = Number(selectedPrice);
-    const mode = isDemoModeSafe() ? "demo" : "real";
+    if (availableUsd < selectedUsd) {
+      alert(`Insufficient balance. You need at least $${selectedUsd.toFixed(2)} to start this task.`);
+      return;
+    }
+    setShowConfirmModal(true);
+  }, [selectedPrice, availableUsd]);
 
-    // 縺薙％縺ｧ縺ｯ谿矩ｫ倥ｒ蠑輔°縺ｪ縺・
-    // Ready for Task 蛛ｴ縺ｧ reserve / debit 縺吶ｋ蜑肴署
-    window.location.href = `/task?price=${encodeURIComponent(String(selectedUsd))}&mode=${encodeURIComponent(mode)}`;
+  const confirmAcceptJob = useCallback(async () => {
+    setLoading(true);
+    try {
+      const selectedUsd = Number(selectedPrice);
+      const r = await acceptJob(selectedUsd);
+
+      if (!r || !r.ok || !r.attemptId) {
+        alert("START ERROR:\n" + String((r && r.error) || "failed"));
+        return;
+      }
+
+      const aid = String(r.attemptId);
+
+      try {
+        localStorage.removeItem("taskdash_v2_submissionId");
+        localStorage.removeItem("lastSubmissionId");
+        localStorage.removeItem(LAST_SUBMIT_KEY);
+        for (const k of LEGACY_SUBMISSION_KEYS) localStorage.removeItem(k);
+      } catch {}
+
+      // ここは window.location で固定（router不調でも飛ぶ）
+      window.location.href = `/task?attemptId=${encodeURIComponent(aid)}&price=${encodeURIComponent(String(selectedUsd))}`;
+    } catch (error) {
+      alert((error && error.message) || String(error));
+    } finally {
+      setShowConfirmModal(false);
+      setLoading(false);
+    }
   }, [selectedPrice]);
 
   const handleAddFunds = useCallback(async () => {
@@ -594,6 +652,7 @@ export default function HomePage() {
     }
   }, [addFundsAmount, loadData]);
 
+  // user withdraw
   const handleWithdraw = useCallback(async () => {
     if (isDemoModeSafe()) {
       alert("Withdraw is disabled in demo mode.");
@@ -685,7 +744,7 @@ export default function HomePage() {
         return;
       }
 
-      setAdminWithdrawMsg(`笨・Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`);
+      setAdminWithdrawMsg(`✅ Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`);
 
       try {
         const pb = await getPlatformBalance();
@@ -698,6 +757,7 @@ export default function HomePage() {
     }
   }, [adminWithdrawEmail, adminWithdrawUsd]);
 
+  // mount: auth -> restore waiting/refunded -> load
   useEffect(() => {
     let alive = true;
 
@@ -737,6 +797,7 @@ export default function HomePage() {
     };
   }, [checkAuth, refreshAll, loadWaitingCounts]);
 
+  // focus/visibility refresh
   useEffect(() => {
     const run = () => {
       loadRecent();
@@ -773,6 +834,7 @@ export default function HomePage() {
     };
   }, [loadRecent, loadData, loadForfeited, loadWaitingCounts]);
 
+  // filtered waiting list
   const filteredWaitingList = useMemo(() => {
     const list = waitingList || [];
     if (waitingPriceFilter === "all") return list;
@@ -781,7 +843,15 @@ export default function HomePage() {
     if (!Number.isFinite(p) || p <= 0) return list;
 
     return list.filter((x) => {
-      const price = normalizePriceFromWaitingItem(x);
+      const stakeCents = x && x.stakeCents != null && Number.isFinite(Number(x.stakeCents)) ? Number(x.stakeCents) : null;
+
+      const price =
+        x && x.priceUsd != null && Number.isFinite(Number(x.priceUsd))
+          ? Number(x.priceUsd)
+          : stakeCents != null
+          ? stakeCents / 100
+          : null;
+
       if (price == null) return true;
       return Math.round(price * 100) === Math.round(p * 100);
     });
@@ -790,17 +860,8 @@ export default function HomePage() {
   const notCompletedItems = useMemo(() => (Array.isArray(forfeitedItems) ? forfeitedItems : []), [forfeitedItems]);
   const refundedItems = useMemo(() => (Array.isArray(refundedList) ? refundedList : []), [refundedList]);
 
-  const totalWaiting = useMemo(() => {
-    return PRICE_OPTIONS.reduce((sum, price) => sum + Number(waitingCounts[String(price)] || 0), 0);
-  }, [waitingCounts]);
-
-  const selectedTierWaiting = useMemo(() => {
-    if (selectedPrice == null) return 0;
-    return Number(waitingCounts[String(selectedPrice)] || 0);
-  }, [selectedPrice, waitingCounts]);
-
   /* =====================================================
-     Waiting polling
+     Waiting polling (stable)
   ===================================================== */
 
   const stopPolling = useCallback(() => {
@@ -895,7 +956,9 @@ export default function HomePage() {
     setWaitingError(null);
 
     try {
-      const res = await listWaiting(20);
+      const limit = 20;
+
+      const res = await listWaiting(limit);
       if (!res || !res.ok) throw new Error((res && res.error) || "failed");
 
       const rawList = Array.isArray(res.items) ? res.items : [];
@@ -926,12 +989,12 @@ export default function HomePage() {
             ? new Date(x.createdAt).getTime()
             : nowEpochMs;
 
+        // expiresAt / remainingMs normalize
         let expiresAtMs = null;
         if (x && x.expiresAt) {
           const t = new Date(x.expiresAt).getTime();
           if (Number.isFinite(t)) expiresAtMs = t;
         }
-
         const remainingMsRaw = x && x.remainingMs != null ? Number(x.remainingMs) : null;
         if (expiresAtMs == null && Number.isFinite(remainingMsRaw)) {
           const ms = Number(remainingMsRaw);
@@ -1070,7 +1133,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-white font-inter">
       <div className="border-b border-[#EDEDED]">
-        <div className="max-w-[980px] mx-auto px-6 h-[64px] flex items-center justify-between">
+        <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full" />
             <span className="text-[16px] font-semibold text-[#2B2B2B]">Task Dash{isDemo ? " (Demo)" : ""}</span>
@@ -1133,172 +1196,87 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="max-w-[980px] mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_0.95fr] gap-6 mb-6">
-          <div className="bg-white border border-[#F1F1F1] rounded-2xl p-7">
-            <div className="inline-flex items-center rounded-full border border-[#D9E5FF] bg-[#F5F8FF] px-3 py-1 text-[12px] font-semibold text-[#2563FF]">
-              Skill-based task platform
+      <div className="max-w-[800px] mx-auto px-6 py-8">
+        {/* Balance Card */}
+        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex-1">
+              <div className="text-[13px] text-[#7A7A7A] mb-1">Available Balance</div>
+              <div className="text-[32px] font-semibold text-[#2B2B2B]">{fmtUsd(availableUsd)}</div>
+              {reservedUsd > 0 ? (
+                <div className="text-[12px] text-[#F59E0B] mt-1">{fmtUsd(reservedUsd)} reserved (withdrawal pending)</div>
+              ) : null}
             </div>
 
-            <div className="mt-5 text-[18px] sm:text-[20px] font-semibold text-[#2B2B2B] leading-[1.4]">
-              Practice first. Funds are reserved only when you press <span className="text-[#2563FF]">Ready for Task</span>.
-            </div>
-
-            <div className="mt-3 text-[14px] text-[#6B7280] leading-[1.8]">
-              Select a tier, open the practice board, and enter only when you are ready. Starting practice does not reserve your balance.
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="rounded-xl border border-[#ECECEC] p-4">
-                <div className="text-[12px] font-semibold text-[#7A7A7A]">Step 1</div>
-                <div className="mt-2 text-[16px] font-semibold text-[#2B2B2B]">Select a tier</div>
-                <div className="mt-2 text-[13px] text-[#7A7A7A]">Choose the price level and check the queue.</div>
-              </div>
-              <div className="rounded-xl border border-[#ECECEC] p-4">
-                <div className="text-[12px] font-semibold text-[#7A7A7A]">Step 2</div>
-                <div className="mt-2 text-[16px] font-semibold text-[#2B2B2B]">Practice for free</div>
-                <div className="mt-2 text-[13px] text-[#7A7A7A]">Open the task screen and try the practice board first.</div>
-              </div>
-              <div className="rounded-xl border border-[#ECECEC] p-4">
-                <div className="text-[12px] font-semibold text-[#7A7A7A]">Step 3</div>
-                <div className="mt-2 text-[16px] font-semibold text-[#2B2B2B]">Ready confirms entry</div>
-                <div className="mt-2 text-[13px] text-[#7A7A7A]">The participation amount is reserved only when you press Ready for Task.</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-[#F1F1F1] rounded-2xl p-7">
-            <div className="text-[14px] font-semibold text-[#2B2B2B]">Wallet</div>
-
-            <div className="mt-4 text-[13px] text-[#7A7A7A]">Available Balance</div>
-            <div className="mt-1 text-[42px] leading-none font-semibold text-[#2B2B2B]">{fmtUsd(availableUsd)}</div>
-
-            {reservedUsd > 0 ? (
-              <div className="mt-2 text-[12px] text-[#F59E0B]">{fmtUsd(reservedUsd)} reserved</div>
-            ) : (
-              <div className="mt-2 text-[12px] text-[#7A7A7A]">Available for future task participation.</div>
-            )}
-
-            <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
               <button
                 onClick={() => setShowAddFundsModal(true)}
-                className="flex items-center justify-center gap-2 h-[44px] bg-[#10B981] text-white text-[14px] font-semibold rounded-xl hover:bg-[#059669]"
+                className="flex items-center gap-2 px-4 py-2 bg-[#10B981] text-white text-[13px] font-semibold rounded-lg hover:bg-[#059669]"
               >
                 <Plus size={16} />
                 Add Funds
               </button>
               <button
                 onClick={() => setShowWithdrawModal(true)}
-                className="h-[44px] bg-white border border-[#E5E7EB] text-[#2B2B2B] text-[14px] font-semibold rounded-xl hover:border-[#2563FF]"
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg hover:border-[#2563FF]"
               >
                 Withdraw
               </button>
             </div>
+          </div>
 
-            <div className="mt-5 rounded-xl border border-[#ECECEC] bg-[#FCFCFC] p-4">
-              <div className="text-[13px] font-semibold text-[#2B2B2B]">Important</div>
-              <div className="mt-2 text-[13px] leading-[1.7] text-[#7A7A7A]">
-                Task Dash is a performance-evaluated platform. Rewards are determined by work quality and timing, not by user-to-user wagering.
-              </div>
+          {/* Select Task Price */}
+          <div className="mb-6">
+            <div className="text-sm text-gray-500 mb-2">Select Task Tier (Entry Fee)</div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {PRICE_OPTIONS.map((price) => {
+                const disabled = availableUsd < price;
+
+                return (
+                  <button
+                    key={price}
+                    onClick={() => setSelectedPrice(price)}
+                    disabled={disabled}
+                    className={`h-[60px] rounded-lg text-[18px] font-semibold transition-all relative ${
+                      selectedPrice === price
+                        ? "bg-[#2563FF] text-white border-2 border-[#2563FF]"
+                        : disabled
+                        ? "bg-[#F5F5F5] text-[#C3C3C3] border-2 border-[#E5E5E5] cursor-not-allowed"
+                        : "bg-white text-[#2B2B2B] border-2 border-[#E5E5E5] hover:border-[#2563FF]"
+                    }`}
+                  >
+                    ${price}
+                  </button>
+                );
+              })}
             </div>
-          </div>
-        </div>
 
-        <div className="bg-white border border-[#F1F1F1] rounded-2xl p-6 mb-6">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <div className="text-[28px] font-semibold text-[#2B2B2B]">Choose a Task Tier</div>
-              <div className="mt-2 text-[14px] text-[#7A7A7A]">
-                Queue activity is separated by price. Practice opens first, and balance is reserved later on Ready for Task.
-              </div>
+            <div className="mt-3 text-[12px] text-[#7A7A7A]">
+              Entry fee is paid to the platform. Compensation is determined by performance evaluation (not a wager).
             </div>
-
-            {!isDemo ? (
-              <div className="text-[13px] text-[#7A7A7A]">
-                Total waiting: <span className="font-semibold text-[#2B2B2B]">{totalWaiting}</span>
-              </div>
-            ) : (
-              <div className="text-[13px] text-[#7A7A7A]">Demo mode</div>
-            )}
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {PRICE_OPTIONS.map((price) => {
-              const isSelected = Number(selectedPrice) === Number(price);
-              const queueCount = Number(waitingCounts[String(price)] || 0);
-              const hasEnoughForReady = Number(availableUsd || 0) >= Number(price);
-
-              return (
-                <button
-                  key={price}
-                  type="button"
-                  onClick={() => setSelectedPrice(price)}
-                  className={[
-                    "rounded-2xl border p-4 text-left transition min-h-[138px]",
-                    isSelected
-                      ? "border-[#2563FF] ring-2 ring-[#DCE7FF] bg-[#FAFCFF]"
-                      : "border-[#ECECEC] bg-white hover:border-[#2563FF]",
-                  ].join(" ")}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-[18px] font-semibold text-[#2B2B2B]">${price}</div>
-                    {isSelected ? (
-                      <div className="rounded-full bg-[#2563FF] px-3 py-1 text-[11px] font-semibold text-white">Selected</div>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-5 text-[13px] text-[#7A7A7A]">Queue</div>
-                  <div className="mt-1 flex items-center justify-between">
-                    <div className="text-[20px] font-semibold text-[#2B2B2B]">{queueCount}</div>
-                    <div className="text-[12px] text-[#7A7A7A]">waiting</div>
-                  </div>
-
-                  <div className="mt-5 text-[13px] font-medium text-[#2B2B2B]">Open task practice</div>
-                  <div className="mt-1 text-[12px] text-[#7A7A7A]">
-                    {hasEnoughForReady
-                      ? "Ready is available with your current balance."
-                      : `Need ${fmtUsd(price)} balance when you press Ready.`}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-[#ECECEC] bg-[#FCFCFC] p-4">
-            <div className="text-[13px] font-semibold text-[#2B2B2B]">Selected flow</div>
-            <div className="mt-2 text-[15px] text-[#2B2B2B] leading-[1.8]">
-              Start Practice 竊・Practice board 竊・Ready for Task 竊・participation amount reserved
-            </div>
-            {selectedPrice != null ? (
-              <div className="mt-2 text-[13px] text-[#7A7A7A]">
-                Selected tier: <span className="font-semibold text-[#2B2B2B]">${Number(selectedPrice).toFixed(0)}</span>
-                {!isDemo ? (
-                  <>
-                    {" "}
-                    ﾂｷ waiting in this tier: <span className="font-semibold text-[#2B2B2B]">{selectedTierWaiting}</span>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-5 text-[12px] text-[#7A7A7A]">
-            Starting practice does not reserve funds. The amount is reserved only when you press Ready for Task on the task screen.
           </div>
 
           <button
-            onClick={handleStartPractice}
-            disabled={selectedPrice == null}
-            className="mt-5 w-full h-[56px] bg-[#2563FF] text-white text-[16px] font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1E40AF]"
+            onClick={handleAcceptJob}
+            disabled={selectedPrice == null || availableUsd < Number(selectedPrice)}
+            className="w-full h-[56px] bg-[#2563FF] text-white text-[16px] font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1E40AF]"
           >
             {selectedPrice == null
               ? "Select Tier First"
-              : `Start Task Practice ($${Number(selectedPrice).toFixed(2)})`}
+              : !isDemo && Number(waitingCounts[String(selectedPrice)] || 0) > 0
+              ? `Start Task ($${Number(selectedPrice).toFixed(2)} Entry Fee) - ${Number(waitingCounts[String(selectedPrice)] || 0)} waiting`
+              : `Start Task ($${Number(selectedPrice).toFixed(2)} Entry Fee)`}
           </button>
+
+          {selectedPrice != null && availableUsd < Number(selectedPrice) ? (
+            <p className="text-[12px] text-[#C33] text-center mt-3">Insufficient balance. Contact admin for more funds.</p>
+          ) : null}
         </div>
 
+        {/* Tabs Card */}
         <div className="bg-white border border-[#F1F1F1] rounded-2xl p-6 mb-6">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center justify-between">
             <div className="inline-flex rounded-xl border border-[#E7E7E7] bg-white p-1 shadow-[0_6px_16px_rgba(0,0,0,0.06)]">
               <button
                 type="button"
@@ -1374,6 +1352,7 @@ export default function HomePage() {
             )}
           </div>
 
+          {/* TAB CONTENT */}
           {activeTab === "results" ? (
             <RecentResultsPanel
               recentLoading={recentLoading}
@@ -1428,6 +1407,7 @@ export default function HomePage() {
         </a>
       </div>
 
+      {/* ✅ Admin Modal */}
       {showAdmin && adminChecked && isAdmin ? (
         <div className="fixed inset-0 z-[100]">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowAdmin(false)} />
@@ -1514,6 +1494,7 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {/* Add Funds Modal */}
       {showAddFundsModal ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
@@ -1558,6 +1539,7 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {/* Withdraw Modal */}
       {showWithdrawModal ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
@@ -1608,6 +1590,38 @@ export default function HomePage() {
                 className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
               >
                 {processingWithdraw ? "Processing..." : "Withdraw"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Confirm Modal */}
+      {showConfirmModal ? (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">Start Task?</h3>
+            <p className="text-[14px] text-[#7A7A7A] mb-6">
+              Entry fee: <strong>${Number(selectedPrice || 0).toFixed(2)}</strong>
+              <br />
+              Balance after: <strong>${(availableUsd - Number(selectedPrice || 0)).toFixed(2)}</strong>
+              <br />
+              <span className="text-[12px] text-[#9CA3AF]">Compensation is paid by the platform based on performance evaluation.</span>
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAcceptJob}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
+              >
+                Confirm
               </button>
             </div>
           </div>
