@@ -8,7 +8,7 @@ import {
   isDemoMode,
   getCurrent,
   submitTask,
-  // listForfeited, // ✅ Taskでは不要
+  acceptJob,
   upsertWaiting,
   getAttemptIdStorage,
   saveAttemptIdStorage,
@@ -23,9 +23,9 @@ import { goReal } from "@/utils/navigation";
  * ✅ waiting / forfeited / results の履歴表示は Home に集約（Taskには出さない）
  * ✅ timer は「カウントダウン後」に startedAt を確定（カウントダウン分を含めない）
  * ✅ Practiceは完了時にフィードバック表示（Correct / Try again）
- *
- * Demo CPU：
- * - submitTask(payload) に elapsedMs / priceUsd を渡す（runtimeData側でCPU結果生成に使う）
+ * ✅ Ready for Task を押した瞬間だけ real参加を確定する
+ * ✅ Start / Practice の段階では絶対に課金しない
+ * ✅ acceptJob の実シグネチャ acceptJob(priceUsd: number) に合わせる
  */
 
 // -----------------------------
@@ -86,6 +86,8 @@ export default function TaskPage() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const elapsedTimerRef = useRef(null);
 
+  const [readySubmitting, setReadySubmitting] = useState(false);
+
   const draggedRef = useRef(null);
 
   // task board
@@ -103,8 +105,7 @@ export default function TaskPage() {
 
   const attemptIdRef = useRef(null);
 
-  // ✅ Ready時に current で取った startedAt/expiresAt を一旦ここに保持
-  // countdown分を除外するため、task開始時は (preStartedAt + COUNTDOWN秒) を基準にする
+  // Ready時に取得した startedAt/expiresAt を一時保持
   const preStartedAtRef = useRef(null);
   const preExpiresAtRef = useRef(null);
 
@@ -145,7 +146,9 @@ export default function TaskPage() {
     if (typeof window !== "undefined" && !qs("attemptId") && isUuid(aid)) {
       const params = new URLSearchParams(window.location.search);
       params.set("attemptId", aid);
-      if (priceVal != null && Number.isFinite(priceVal)) params.set("price", String(priceVal));
+      if (priceVal != null && Number.isFinite(priceVal)) {
+        params.set("price", String(priceVal));
+      }
       window.history.replaceState({}, "", `${window.location.pathname}?${params}`);
     }
 
@@ -163,6 +166,7 @@ export default function TaskPage() {
     setElapsedMs(0);
     setServerStartedAtMs(null);
     setServerExpiresAtMs(null);
+    setReadySubmitting(false);
     preStartedAtRef.current = null;
     preExpiresAtRef.current = null;
 
@@ -182,9 +186,7 @@ export default function TaskPage() {
   }, []); // intentionally once
 
   // -----------------------------
-  // countdown（3..2..1..0）
-  // - カウントダウンは計測に含めない
-  // - Ready時に確保した startedAt を「+ countdown秒」して task の基準にする
+  // countdown
   // -----------------------------
   useEffect(() => {
     if (phase !== "countdown") {
@@ -214,13 +216,11 @@ export default function TaskPage() {
         clearInterval(countdownTimerRef.current);
         countdownTimerRef.current = null;
 
-        // ✅ countdown分を除外：基準時刻を「Ready時刻 + COUNTDOWN秒」にする
         const base = preStartedAtRef.current != null ? Number(preStartedAtRef.current) : Date.now();
         setServerStartedAtMs(base + COUNTDOWN_SECONDS * 1000);
         setServerExpiresAtMs(preExpiresAtRef.current != null ? Number(preExpiresAtRef.current) : null);
         setElapsedMs(0);
 
-        // task盤面を毎回リセット
         const b = makeBoard();
         setNumbers(b.numbers);
         setOrderedNumbers(b.ordered);
@@ -238,7 +238,7 @@ export default function TaskPage() {
   }, [phase]);
 
   // -----------------------------
-  // task開始時：elapsed タイマー起動（serverStartedAtMs を基準）
+  // task elapsed timer
   // -----------------------------
   useEffect(() => {
     if (phase !== "task") {
@@ -360,7 +360,6 @@ export default function TaskPage() {
         const empty = newPool.findIndex((x) => x == null);
         if (empty >= 0) newPool[empty] = dstValue;
         else {
-          // 戻す
           slots[slotIndex] = dstValue;
           newPool[drag.index] = value;
           setPool(newPool);
@@ -393,34 +392,60 @@ export default function TaskPage() {
   // actions
   // -----------------------------
   async function handleReadyForReal() {
-    const aid = getAttemptIdSafe();
-    if (!isUuid(aid)) {
-      setError("missing/invalid attemptId");
-      setPhase("error");
-      return;
-    }
+    if (readySubmitting) return;
 
     setError(null);
+    setReadySubmitting(true);
 
-    // ✅ DEMO：サーバーに行かず Ready 時刻を確保して countdown → task
+    // DEMO: 課金なし
     if (isDemoMode() || getMode() === "demo" || qs("mode") === "demo") {
       preStartedAtRef.current = Date.now();
       preExpiresAtRef.current = null;
       setPracticeResult(null);
+      setReadySubmitting(false);
       setPhase("countdown");
       return;
     }
 
-    // ✅ REAL：Ready押下時点で current を叩いて startedAt/expiresAt を確保
     try {
+      const p = Number(priceUsd);
+      if (!Number.isFinite(p) || p <= 0) {
+        throw new Error("invalid priceUsd");
+      }
+
+      // ★ Ready押下時に初めて real参加を確定
+      const accepted = await acceptJob(p);
+
+      if (accepted && accepted.ok === false) {
+        throw new Error(accepted.error || "acceptJob failed");
+      }
+
+      // acceptJob が attemptId / id を返すなら優先して採用
+      const acceptedAttemptId =
+        accepted?.attemptId ||
+        accepted?.id ||
+        accepted?.attempt?.id ||
+        null;
+
+      let aid = acceptedAttemptId || getAttemptIdSafe() || null;
+
+      if (!isUuid(aid)) {
+        throw new Error("acceptJob did not return a valid attemptId");
+      }
+
+      // 状態へ反映
+      setAttemptId(aid);
+      saveAttemptIdStorage(aid);
+      attemptIdRef.current = aid;
+
+      // current取得
       const data = await getCurrent(aid);
 
       if (!data || data.ok === false) {
         throw new Error((data && data.error) || "current failed");
       }
 
-      // hasTask があるAPIだけチェック（無いならスルー）
-      if (data && Object.prototype.hasOwnProperty.call(data, "hasTask") && data.hasTask === false) {
+      if (Object.prototype.hasOwnProperty.call(data, "hasTask") && data.hasTask === false) {
         throw new Error("current: hasTask=false (attempt not found?)");
       }
 
@@ -431,9 +456,12 @@ export default function TaskPage() {
       preExpiresAtRef.current = expiresAt;
 
       setPracticeResult(null);
+      setReadySubmitting(false);
       setPhase("countdown");
     } catch (e) {
       const msg = String((e && e.message) || e);
+
+      setReadySubmitting(false);
 
       if (
         (e && e.code === "AUTH_REQUIRED") ||
@@ -474,8 +502,6 @@ export default function TaskPage() {
         orderedNumbers: ordered,
         taskId: (task && task.id) || "dev-task",
         stakeCents,
-
-        // ★ Demo CPUのために渡す（runtimeData側が推定に使う）
         priceUsd: priceUsd ?? null,
         elapsedMs: elapsedMs,
         timeMs: elapsedMs,
@@ -488,7 +514,6 @@ export default function TaskPage() {
       const sid = data.submissionId || data.id || null;
       if (!isUuid(sid)) throw new Error("submit returned invalid submissionId");
 
-      // ✅ matchId が返ったなら waiting に積まない（realの即マッチ時）
       const st = String(data.statusCompat || data.status || "").toLowerCase();
       if (!data.matchId && st.includes("wait")) {
         upsertWaiting({
@@ -501,7 +526,6 @@ export default function TaskPage() {
         });
       }
 
-      // ✅ 仕様通り：待たずにHomeへ戻す
       goHome();
     } catch (e) {
       const msg = String((e && e.message) || e);
@@ -577,8 +601,6 @@ export default function TaskPage() {
         </div>
 
         <div className="max-w-[800px] mx-auto px-6 py-8">
-          {/* ✅ Tabs 제거：Practiceだけ表示 */}
-
           <div className="bg-[#FEF3C7] border border-[#F59E0B] rounded-xl p-6 mb-6">
             <h2 className="text-[18px] font-semibold text-[#92400E] mb-3">Task Rules</h2>
             <ul className="space-y-2 text-[14px] text-[#78350F]">
@@ -696,9 +718,14 @@ export default function TaskPage() {
             <div className="mt-8 pt-6 border-t border-[#EDEDED]">
               <button
                 onClick={handleReadyForReal}
-                className="w-full h-[56px] bg-[#10B981] text-white text-[16px] font-semibold rounded-lg hover:bg-[#059669]"
+                disabled={readySubmitting}
+                className={`w-full h-[56px] text-white text-[16px] font-semibold rounded-lg ${
+                  readySubmitting
+                    ? "bg-[#6EE7B7] cursor-not-allowed"
+                    : "bg-[#10B981] hover:bg-[#059669]"
+                }`}
               >
-                Ready for Task →
+                {readySubmitting ? "Preparing Task..." : "Ready for Task →"}
               </button>
             </div>
           </div>

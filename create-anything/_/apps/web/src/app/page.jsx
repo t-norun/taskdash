@@ -1,7 +1,17 @@
 ﻿"use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, LogOut, Plus } from "lucide-react";
+import {
+  BookOpen,
+  LogOut,
+  Plus,
+  ChevronRight,
+  Wallet,
+  Clock3,
+  Trophy,
+  RotateCcw,
+  AlertTriangle,
+} from "lucide-react";
 
 import { getQueryParam, navigate } from "../utils/navigation";
 import { isAuthenticated, getUser, logout } from "../utils/auth";
@@ -11,7 +21,6 @@ import {
   isDemoMode as rtIsDemoMode,
   getBalance,
   getPlatformBalance,
-  acceptJob,
   listWaiting,
   checkMatch,
   recentResults,
@@ -23,17 +32,10 @@ import {
   adminPaypalPayout,
 } from "../utils/runtimeData";
 
-// ✅ extracted helpers/components
 import { fmtElapsed, fmtWhenShort, fmtRemainingHm, centsToUsd, fmtUsd } from "./home/logic/format";
 import { readWaitingList, writeWaitingList, dedupeWaitingList } from "./home/logic/storageWaiting";
 import { readRefundedList, writeRefundedList, dedupeRefundedList } from "./home/logic/storageRefunded";
 import AdminPlatformBalance from "./home/ui/AdminPlatformBalance";
-
-// ✅ extracted tab panels
-import RecentResultsPanel from "./home/ui/RecentResultsPanel";
-import WaitingPanel from "./home/ui/WaitingPanel";
-import NotCompletedPanel from "./home/ui/NotCompletedPanel";
-import RefundedPanel from "./home/ui/RefundedPanel";
 
 /* =====================================================
    HARD STOP: prevent /undefined navigation
@@ -48,7 +50,6 @@ const safeNavigate = (to) => {
     if (s === "/undefined" || s.startsWith("/undefined?")) return navigate("/");
     return navigate(s);
   } catch {
-    // 最後の保険
     try {
       window.location.href = "/";
     } catch {}
@@ -167,12 +168,13 @@ function labelOfNotCompleted(it) {
 function reasonOfNotCompleted(it) {
   const st = statusUpper(it);
   if (st.includes("FORFEIT")) return "Reason: left before submitting";
-  if (st.includes("EXPIRED")) return "Reason: not submitted";
+  if (st.includes("EXPIRED")) return "Reason: not submitted in time";
   return "Reason: not submitted";
 }
 
 function whenOfItem(it) {
-  const cand = (it && (it.forfeitedAt || it.expiredAt || it.updatedAt || it.submittedAt || it.createdAt)) || null;
+  const cand =
+    (it && (it.forfeitedAt || it.expiredAt || it.updatedAt || it.submittedAt || it.createdAt)) || null;
   if (!cand) return null;
   try {
     return new Date(cand).toLocaleString();
@@ -181,12 +183,42 @@ function whenOfItem(it) {
   }
 }
 
+function normalizePriceFromItem(it) {
+  const stakeCents =
+    it && it.stakeCents != null && Number.isFinite(Number(it.stakeCents)) ? Number(it.stakeCents) : null;
+
+  const priceUsd =
+    it && it.priceUsd != null && Number.isFinite(Number(it.priceUsd))
+      ? Number(it.priceUsd)
+      : stakeCents != null
+      ? stakeCents / 100
+      : null;
+
+  return priceUsd;
+}
+
+function outcomeLabel(v) {
+  const s = String(v || "").toLowerCase();
+  if (s === "win" || s === "winner" || s === "won") return "Win";
+  if (s === "lose" || s === "loss" || s === "loser" || s === "lost") return "Loss";
+  if (s === "draw" || s === "tie") return "Draw";
+  return "Result";
+}
+
+function outcomeTone(v) {
+  const s = String(v || "").toLowerCase();
+  if (s === "win" || s === "winner" || s === "won") return "bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]";
+  if (s === "lose" || s === "loss" || s === "loser" || s === "lost")
+    return "bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]";
+  if (s === "draw" || s === "tie") return "bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]";
+  return "bg-[#F8FAFC] text-[#334155] border-[#E2E8F0]";
+}
+
 /* =====================================================
    runtime call adapters (signature drift safe)
 ===================================================== */
 
 async function callPaypalPayout(amountCents, email) {
-  // runtimeData が (amountCents, email, requestId) を要求する版でも落とさない
   try {
     if (typeof paypalPayout !== "function") return { ok: false, error: "paypalPayout not available" };
     if (paypalPayout.length >= 3) {
@@ -197,6 +229,500 @@ async function callPaypalPayout(amountCents, email) {
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
   }
+}
+
+/* =====================================================
+   small inline panels
+===================================================== */
+
+function EmptyState({ icon, title, text }) {
+  const Icon = icon;
+  return (
+    <div className="rounded-2xl border border-dashed border-[#E5E7EB] bg-[#FAFAFA] px-6 py-10 text-center">
+      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white border border-[#E5E7EB]">
+        <Icon size={20} className="text-[#9CA3AF]" />
+      </div>
+      <div className="text-[15px] font-semibold text-[#2B2B2B]">{title}</div>
+      <div className="mt-1 text-[13px] text-[#7A7A7A]">{text}</div>
+    </div>
+  );
+}
+
+function SectionTitle({ title, subtitle, right }) {
+  return (
+    <div className="flex items-start justify-between gap-4 mb-5">
+      <div>
+        <div className="text-[18px] font-semibold text-[#2B2B2B]">{title}</div>
+        {subtitle ? <div className="mt-1 text-[13px] text-[#7A7A7A]">{subtitle}</div> : null}
+      </div>
+      {right ? <div className="shrink-0">{right}</div> : null}
+    </div>
+  );
+}
+
+function RecentResultsPanelInline({
+  recentLoading,
+  recentError,
+  recentMatches,
+  isDemo,
+  fmtWhenShort,
+  fmtElapsed,
+}) {
+  if (recentLoading) {
+    return <div className="text-[13px] text-[#7A7A7A]">Loading recent results...</div>;
+  }
+
+  if (recentError) {
+    return (
+      <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-[13px] text-[#991B1B]">
+        Failed to load recent results: {String(recentError)}
+      </div>
+    );
+  }
+
+  if (!recentMatches || recentMatches.length === 0) {
+    return (
+      <EmptyState
+        icon={Trophy}
+        title={isDemo ? "No demo results yet" : "No recent results yet"}
+        text={
+          isDemo
+            ? "Start a practice flow and finish a task to see demo results here."
+            : "Complete a task and matched results will appear here."
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {recentMatches.map((item, idx) => {
+        const outcome = String(item?.outcome || item?.result || "").toLowerCase();
+        const priceUsd =
+          typeof item?.priceUsd === "number"
+            ? item.priceUsd
+            : typeof item?.stakeCents === "number"
+            ? centsToUsd(item.stakeCents)
+            : null;
+
+        const payoutUsd =
+          typeof item?.deltaUsd === "number"
+            ? item.deltaUsd
+            : typeof item?.userPayoutCents === "number"
+            ? centsToUsd(item.userPayoutCents)
+            : typeof item?.payout === "number"
+            ? Number(item.payout)
+            : null;
+
+        const when =
+          item?.revealedAt || item?.createdAt || item?.updatedAt || item?.submittedAt || item?.resolvedAt || null;
+
+        return (
+          <div
+            key={String(item?.matchId || item?.submissionId || item?.attemptId || idx)}
+            className="rounded-2xl border border-[#ECECEC] bg-white px-5 py-4"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-[12px] font-semibold ${outcomeTone(
+                      outcome
+                    )}`}
+                  >
+                    {outcomeLabel(outcome)}
+                  </span>
+
+                  {priceUsd != null ? (
+                    <span className="inline-flex items-center rounded-full bg-[#F8FAFC] px-3 py-1 text-[12px] font-medium text-[#334155] border border-[#E2E8F0]">
+                      Tier ${Number(priceUsd).toFixed(0)}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Evaluation</div>
+                    <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                      {outcome === "win"
+                        ? "Higher ranked"
+                        : outcome === "lose"
+                        ? "Lower ranked"
+                        : outcome === "draw"
+                        ? "Equivalent"
+                        : "Processed"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Elapsed</div>
+                    <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                      {item?.elapsedMs != null || item?.timeMs != null
+                        ? fmtElapsed(item?.elapsedMs ?? item?.timeMs)
+                        : "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Processed</div>
+                    <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                      {when ? fmtWhenShort(when) : "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#EEF2FF] bg-[#F8FAFF] px-4 py-3 md:min-w-[180px]">
+                <div className="text-[11px] uppercase tracking-wide text-[#64748B]">Platform compensation</div>
+                <div className="mt-1 text-[22px] font-semibold text-[#1E40AF]">
+                  {payoutUsd != null ? fmtUsd(payoutUsd) : "—"}
+                </div>
+                <div className="mt-1 text-[11px] text-[#64748B]">
+                  Based on task performance evaluation, not peer betting.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WaitingPanelInline({
+  waitingError,
+  filteredWaitingList,
+  waitingPriceFilter,
+  setWaitingPriceFilter,
+  PRICE_OPTIONS,
+  waitingLoading,
+  nowMs,
+  fmtWhenShort,
+  fmtRemainingHm,
+  waitingCounts,
+}) {
+  const grouped = useMemo(() => {
+    const map = {};
+    for (const p of PRICE_OPTIONS) map[String(p)] = [];
+
+    for (const item of filteredWaitingList || []) {
+      const price = normalizePriceFromItem(item);
+      const key = Number.isFinite(price) ? String(Math.round(price)) : "unknown";
+      if (!map[key]) map[key] = [];
+      map[key].push(item);
+    }
+
+    return map;
+  }, [filteredWaitingList, PRICE_OPTIONS]);
+
+  return (
+    <div className="space-y-6">
+      <SectionTitle
+        title="Waiting Queue"
+        subtitle="Track queued submissions by tier. Refund timing is shown per waiting item."
+        right={
+          <div className="text-[12px] text-[#7A7A7A]">
+            {waitingLoading ? "Updating..." : "Auto-updating"}
+          </div>
+        }
+      />
+
+      <div className="rounded-2xl border border-[#EDEDED] bg-[#FAFAFA] p-4">
+        <div className="text-[12px] font-semibold text-[#6B7280] mb-3">Filter by tier</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setWaitingPriceFilter("all")}
+            className={`h-10 px-4 rounded-xl border text-[13px] font-semibold transition ${
+              waitingPriceFilter === "all"
+                ? "bg-[#2B2B2B] text-white border-[#2B2B2B]"
+                : "bg-white text-[#2B2B2B] border-[#E5E7EB] hover:border-[#2563FF]"
+            }`}
+          >
+            All
+          </button>
+
+          {PRICE_OPTIONS.map((price) => {
+            const count = Number(waitingCounts?.[String(price)] || 0);
+            return (
+              <button
+                key={price}
+                type="button"
+                onClick={() => setWaitingPriceFilter(String(price))}
+                className={`h-10 px-4 rounded-xl border text-[13px] font-semibold transition ${
+                  String(waitingPriceFilter) === String(price)
+                    ? "bg-[#2B2B2B] text-white border-[#2B2B2B]"
+                    : "bg-white text-[#2B2B2B] border-[#E5E7EB] hover:border-[#2563FF]"
+                }`}
+              >
+                ${price}
+                <span className={`ml-2 ${String(waitingPriceFilter) === String(price) ? "text-white/80" : "text-[#6B7280]"}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {waitingError ? (
+        <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-[13px] text-[#991B1B]">
+          Failed to refresh waiting queue: {String(waitingError)}
+        </div>
+      ) : null}
+
+      {!filteredWaitingList || filteredWaitingList.length === 0 ? (
+        <EmptyState
+          icon={Clock3}
+          title="No waiting submissions"
+          text="Queued tasks will appear here after you submit and wait for a match."
+        />
+      ) : (
+        <div className="space-y-5">
+          {PRICE_OPTIONS.filter((price) => {
+            if (waitingPriceFilter === "all") return true;
+            return String(waitingPriceFilter) === String(price);
+          }).map((price) => {
+            const items = grouped[String(price)] || [];
+            if (!items.length) {
+              return (
+                <div key={price} className="rounded-2xl border border-[#ECECEC] bg-white p-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[16px] font-semibold text-[#2B2B2B]">Tier ${price}</div>
+                    <div className="text-[12px] text-[#9CA3AF]">0 waiting</div>
+                  </div>
+                  <div className="text-[13px] text-[#7A7A7A]">No submissions waiting in this tier right now.</div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={price} className="rounded-2xl border border-[#ECECEC] bg-white p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="text-[16px] font-semibold text-[#2B2B2B]">Tier ${price}</div>
+                    <div className="text-[13px] text-[#7A7A7A]">
+                      {items.length} waiting {items.length === 1 ? "submission" : "submissions"}
+                    </div>
+                  </div>
+                  <div className="rounded-full bg-[#EFF6FF] border border-[#DBEAFE] px-3 py-1 text-[12px] font-semibold text-[#1D4ED8]">
+                    Skill-based match queue
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {items.map((item, idx) => {
+                    const remainingMs =
+                      item?.remainingMs != null
+                        ? Number(item.remainingMs)
+                        : item?.expiresAt
+                        ? Math.max(0, new Date(item.expiresAt).getTime() - nowMs)
+                        : null;
+
+                    return (
+                      <div
+                        key={String(item?.submissionId || item?.attemptId || idx)}
+                        className="rounded-xl border border-[#E5E7EB] bg-[#FCFCFD] p-4"
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex rounded-full bg-[#FFF7ED] border border-[#FED7AA] px-3 py-1 text-[12px] font-semibold text-[#9A3412]">
+                                Waiting
+                              </span>
+                              <span className="inline-flex rounded-full bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1 text-[12px] font-medium text-[#334155]">
+                                Submission {shortId(item?.submissionId)}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Submitted</div>
+                                <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                                  {item?.createdAt || item?.savedAt ? fmtWhenShort(item?.createdAt || item?.savedAt) : "—"}
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Refund timing</div>
+                                <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                                  {remainingMs != null ? fmtRemainingHm(remainingMs) : "—"}
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Status</div>
+                                <div className="text-[14px] font-semibold text-[#2B2B2B]">Queued for comparison</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-[#F3F4F6] bg-white px-4 py-3 md:min-w-[185px]">
+                            <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Protection</div>
+                            <div className="mt-1 text-[14px] font-semibold text-[#2B2B2B]">
+                              No match → refund
+                            </div>
+                            <div className="mt-1 text-[11px] text-[#7A7A7A]">
+                              The held participation amount is refunded if no eligible match is found in time.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotCompletedPanelInline({
+  forfeitedLoading,
+  forfeitedError,
+  notCompletedItems,
+  labelOfNotCompleted,
+  reasonOfNotCompleted,
+  whenOfItem,
+}) {
+  if (forfeitedLoading) {
+    return <div className="text-[13px] text-[#7A7A7A]">Loading task status...</div>;
+  }
+
+  if (forfeitedError) {
+    return (
+      <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-[13px] text-[#991B1B]">
+        Failed to load not completed items: {String(forfeitedError)}
+      </div>
+    );
+  }
+
+  if (!notCompletedItems || notCompletedItems.length === 0) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="No not-completed tasks"
+        text="Tasks that expire or are left before submission will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {notCompletedItems.map((item, idx) => {
+        const priceUsd = normalizePriceFromItem(item);
+        return (
+          <div
+            key={String(item?.submissionId || item?.attemptId || item?.id || idx)}
+            className="rounded-2xl border border-[#ECECEC] bg-white px-5 py-4"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex rounded-full border border-[#FECACA] bg-[#FEF2F2] px-3 py-1 text-[12px] font-semibold text-[#991B1B]">
+                    {labelOfNotCompleted(item)}
+                  </span>
+                  {priceUsd != null ? (
+                    <span className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-1 text-[12px] font-medium text-[#334155]">
+                      Tier ${Number(priceUsd).toFixed(0)}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 text-[14px] font-semibold text-[#2B2B2B]">{reasonOfNotCompleted(item)}</div>
+                <div className="mt-1 text-[13px] text-[#7A7A7A]">
+                  {whenOfItem(item) ? `Recorded: ${whenOfItem(item)}` : "Recorded time unavailable"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#F3F4F6] bg-[#FAFAFA] px-4 py-3 md:min-w-[170px]">
+                <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Handling</div>
+                <div className="mt-1 text-[14px] font-semibold text-[#2B2B2B]">Removed from active flow</div>
+                <div className="mt-1 text-[11px] text-[#7A7A7A]">
+                  See rules for task completion and refund handling.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RefundedPanelInline({ refundedItems, fmtWhenShort }) {
+  if (!refundedItems || refundedItems.length === 0) {
+    return (
+      <EmptyState
+        icon={RotateCcw}
+        title="No refunded items"
+        text="Refunded waiting submissions will be listed here."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {refundedItems.map((item, idx) => {
+        const priceUsd = normalizePriceFromItem(item);
+        return (
+          <div
+            key={String(item?.submissionId || item?.attemptId || idx)}
+            className="rounded-2xl border border-[#ECECEC] bg-white px-5 py-4"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex rounded-full border border-[#BBF7D0] bg-[#ECFDF5] px-3 py-1 text-[12px] font-semibold text-[#065F46]">
+                    Refunded
+                  </span>
+                  {priceUsd != null ? (
+                    <span className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-1 text-[12px] font-medium text-[#334155]">
+                      Tier ${Number(priceUsd).toFixed(0)}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">When</div>
+                    <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                      {item?.savedAt || item?.createdAt ? fmtWhenShort(item?.savedAt || item?.createdAt) : "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Reason</div>
+                    <div className="text-[14px] font-semibold text-[#2B2B2B]">
+                      {item?.reason ? String(item.reason) : "No eligible match in time"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-[#9CA3AF]">Handling</div>
+                    <div className="text-[14px] font-semibold text-[#2B2B2B]">Returned to balance</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#D1FAE5] bg-[#F0FDF4] px-4 py-3 md:min-w-[185px]">
+                <div className="text-[11px] uppercase tracking-wide text-[#047857]">Refund protection</div>
+                <div className="mt-1 text-[14px] font-semibold text-[#065F46]">
+                  Participation amount released
+                </div>
+                <div className="mt-1 text-[11px] text-[#047857]">
+                  No match was completed within the waiting window.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /* =====================================================
@@ -254,7 +780,7 @@ export default function HomePage() {
   const [paypalEmail, setPaypalEmail] = useState("");
   const [processingWithdraw, setProcessingWithdraw] = useState(false);
 
-  // "Refund in" 用（60秒更新）
+  // refund countdown tick
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   // tabs
@@ -277,7 +803,6 @@ export default function HomePage() {
   const [adminWithdrawing, setAdminWithdrawing] = useState(false);
   const [adminWithdrawMsg, setAdminWithdrawMsg] = useState("");
 
-  // ✅ 未ログインは demo を優先（URLに指定がない時）
   useEffect(() => {
     const urlMode = getModeFromUrl();
     if (urlMode) return;
@@ -298,18 +823,14 @@ export default function HomePage() {
     }
   }, []);
 
-  // keep refs updated
   useEffect(() => {
     waitingRef.current = Array.isArray(waitingList) ? waitingList : [];
   }, [waitingList]);
 
-  // demo では results 固定
   useEffect(() => {
     if (isDemo && activeTab !== "results") setActiveTab("results");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo, activeTab]);
 
-  // waiting remaining tick
   useEffect(() => {
     if (isDemo) return;
     if (!waitingList || waitingList.length === 0) return;
@@ -317,7 +838,6 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, [waitingList.length, isDemo]);
 
-  // URL mode sync
   useEffect(() => {
     const urlMode = getModeFromUrl();
     if (urlMode) setModeSafe(urlMode);
@@ -325,22 +845,17 @@ export default function HomePage() {
       const lsMode = getModeFromStorage();
       if (!lsMode) setModeSafe(getModeSafe());
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // redirect paypal token param -> /paypal-success
   useEffect(() => {
     const token = getQueryParam("token");
     if (token) safeNavigate(`/paypal-success?token=${encodeURIComponent(token)}`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // selectedPrice guard
   useEffect(() => {
     if (selectedPrice != null && !PRICE_OPTIONS.includes(Number(selectedPrice))) setSelectedPrice(null);
   }, [selectedPrice]);
 
-  // ✅ Admin判定（Demo/未ログインは絶対false）
   useEffect(() => {
     let mounted = true;
 
@@ -390,13 +905,11 @@ export default function HomePage() {
     };
   }, [isDemo]);
 
-  // ✅ Adminじゃないなら閉じる（保険）
   useEffect(() => {
     if (!adminChecked) return;
     if (!isAdmin) setShowAdmin(false);
   }, [adminChecked, isAdmin]);
 
-  // ✅ Escで閉じる
   useEffect(() => {
     if (!showAdmin) return;
     const onKey = (e) => {
@@ -417,7 +930,6 @@ export default function HomePage() {
     }
   }, []);
 
-  // auth check
   const checkAuth = useCallback(async () => {
     if (isDemoModeSafe()) {
       setUser({ id: "demo", userId: "demo", level: 1 });
@@ -436,7 +948,6 @@ export default function HomePage() {
     }
   }, []);
 
-  // load data: balance
   const loadData = useCallback(async () => {
     try {
       const b = await getBalance();
@@ -465,7 +976,8 @@ export default function HomePage() {
       const list = Array.isArray(maybeList) ? maybeList : readWaitingList();
       const counts = {};
       for (const it of list) {
-        const stakeCents = it && it.stakeCents != null && Number.isFinite(Number(it.stakeCents)) ? Number(it.stakeCents) : null;
+        const stakeCents =
+          it && it.stakeCents != null && Number.isFinite(Number(it.stakeCents)) ? Number(it.stakeCents) : null;
 
         const priceUsd =
           it && it.priceUsd != null && Number.isFinite(Number(it.priceUsd))
@@ -513,7 +1025,6 @@ export default function HomePage() {
     }
   }, []);
 
-  // recent
   const loadRecent = useCallback(async () => {
     setRecentLoading(true);
     setRecentError(null);
@@ -530,18 +1041,20 @@ export default function HomePage() {
 
       const raw = (Array.isArray(rr.items) && rr.items) || (Array.isArray(rr.results) && rr.results) || [];
 
-      // real は加工しない
       if (!demo) {
         setRecentMatches(raw);
         return;
       }
 
-      // demo は最低限 “表示が崩れない形” に寄せる
       const items = raw.map((r, idx) => {
         const idBase = r.matchId || r.submissionId || r.attemptId || `demo_${idx}`;
         const outcome = String(r.outcome || "win").toLowerCase();
         const priceUsd =
-          typeof r.priceUsd === "number" ? r.priceUsd : typeof r.stakeCents === "number" ? centsToUsd(r.stakeCents) : 1;
+          typeof r.priceUsd === "number"
+            ? r.priceUsd
+            : typeof r.stakeCents === "number"
+            ? centsToUsd(r.stakeCents)
+            : 1;
 
         return {
           ...r,
@@ -576,31 +1089,25 @@ export default function HomePage() {
     }
   }, [loadData, loadRecent, loadForfeited, loadWaitingCounts]);
 
-  const handleAcceptJob = useCallback(() => {
+  const handleStartTask = useCallback(() => {
     if (!selectedPrice) {
-      alert("Please select an entry fee first");
+      alert("Please select a tier first.");
       return;
     }
-    const selectedUsd = Number(selectedPrice);
-    if (availableUsd < selectedUsd) {
-      alert(`Insufficient balance. You need at least $${selectedUsd.toFixed(2)} to start this task.`);
-      return;
-    }
-    setShowConfirmModal(true);
-  }, [selectedPrice, availableUsd]);
 
-  const confirmAcceptJob = useCallback(async () => {
-    setLoading(true);
+    const selectedUsd = Number(selectedPrice);
+
+    if (!isDemo && availableUsd < selectedUsd) {
+      alert(`Insufficient balance. You need at least $${selectedUsd.toFixed(2)} available.`);
+      return;
+    }
+
+    setShowConfirmModal(true);
+  }, [selectedPrice, availableUsd, isDemo]);
+
+  const confirmStartTask = useCallback(async () => {
     try {
       const selectedUsd = Number(selectedPrice);
-      const r = await acceptJob(selectedUsd);
-
-      if (!r || !r.ok || !r.attemptId) {
-        alert("START ERROR:\n" + String((r && r.error) || "failed"));
-        return;
-      }
-
-      const aid = String(r.attemptId);
 
       try {
         localStorage.removeItem("taskdash_v2_submissionId");
@@ -609,15 +1116,19 @@ export default function HomePage() {
         for (const k of LEGACY_SUBMISSION_KEYS) localStorage.removeItem(k);
       } catch {}
 
-      // ここは window.location で固定（router不調でも飛ぶ）
-      window.location.href = `/task?attemptId=${encodeURIComponent(aid)}&price=${encodeURIComponent(String(selectedUsd))}`;
+      const qs = new URLSearchParams();
+      qs.set("price", String(selectedUsd));
+      if (isDemo) qs.set("mode", "demo");
+
+      // ★ 課金しない。Task画面へ移動するだけ。
+      // ★ Ready for Task を押した瞬間に task/page.jsx 側で参加確定。
+      window.location.href = `/task?${qs.toString()}`;
     } catch (error) {
       alert((error && error.message) || String(error));
     } finally {
       setShowConfirmModal(false);
-      setLoading(false);
     }
-  }, [selectedPrice]);
+  }, [selectedPrice, isDemo]);
 
   const handleAddFunds = useCallback(async () => {
     const amt = Number(addFundsAmount);
@@ -652,7 +1163,6 @@ export default function HomePage() {
     }
   }, [addFundsAmount, loadData]);
 
-  // user withdraw
   const handleWithdraw = useCallback(async () => {
     if (isDemoModeSafe()) {
       alert("Withdraw is disabled in demo mode.");
@@ -744,7 +1254,9 @@ export default function HomePage() {
         return;
       }
 
-      setAdminWithdrawMsg(`✅ Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`);
+      setAdminWithdrawMsg(
+        `✅ Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`
+      );
 
       try {
         const pb = await getPlatformBalance();
@@ -757,7 +1269,6 @@ export default function HomePage() {
     }
   }, [adminWithdrawEmail, adminWithdrawUsd]);
 
-  // mount: auth -> restore waiting/refunded -> load
   useEffect(() => {
     let alive = true;
 
@@ -797,7 +1308,6 @@ export default function HomePage() {
     };
   }, [checkAuth, refreshAll, loadWaitingCounts]);
 
-  // focus/visibility refresh
   useEffect(() => {
     const run = () => {
       loadRecent();
@@ -834,7 +1344,6 @@ export default function HomePage() {
     };
   }, [loadRecent, loadData, loadForfeited, loadWaitingCounts]);
 
-  // filtered waiting list
   const filteredWaitingList = useMemo(() => {
     const list = waitingList || [];
     if (waitingPriceFilter === "all") return list;
@@ -843,7 +1352,8 @@ export default function HomePage() {
     if (!Number.isFinite(p) || p <= 0) return list;
 
     return list.filter((x) => {
-      const stakeCents = x && x.stakeCents != null && Number.isFinite(Number(x.stakeCents)) ? Number(x.stakeCents) : null;
+      const stakeCents =
+        x && x.stakeCents != null && Number.isFinite(Number(x.stakeCents)) ? Number(x.stakeCents) : null;
 
       const price =
         x && x.priceUsd != null && Number.isFinite(Number(x.priceUsd))
@@ -857,8 +1367,24 @@ export default function HomePage() {
     });
   }, [waitingList, waitingPriceFilter]);
 
-  const notCompletedItems = useMemo(() => (Array.isArray(forfeitedItems) ? forfeitedItems : []), [forfeitedItems]);
+  const notCompletedItems = useMemo(
+    () => (Array.isArray(forfeitedItems) ? forfeitedItems : []),
+    [forfeitedItems]
+  );
   const refundedItems = useMemo(() => (Array.isArray(refundedList) ? refundedList : []), [refundedList]);
+
+  const totalWaitingCount = useMemo(() => (Array.isArray(waitingList) ? waitingList.length : 0), [waitingList]);
+
+  const selectedTierWaiting = useMemo(() => {
+    if (selectedPrice == null) return 0;
+    return Number(waitingCounts[String(selectedPrice)] || 0);
+  }, [selectedPrice, waitingCounts]);
+
+  const selectedTierCanStart = useMemo(() => {
+    if (selectedPrice == null) return false;
+    if (isDemo) return true;
+    return availableUsd >= Number(selectedPrice);
+  }, [selectedPrice, isDemo, availableUsd]);
 
   /* =====================================================
      Waiting polling (stable)
@@ -899,7 +1425,8 @@ export default function HomePage() {
       const sid = String((w && w.submissionId) || "");
       if (!sid) return;
 
-      const stakeCents = w && w.stakeCents != null && Number.isFinite(Number(w.stakeCents)) ? Number(w.stakeCents) : null;
+      const stakeCents =
+        w && w.stakeCents != null && Number.isFinite(Number(w.stakeCents)) ? Number(w.stakeCents) : null;
 
       const priceUsd =
         w && w.priceUsd != null && Number.isFinite(Number(w.priceUsd))
@@ -926,7 +1453,9 @@ export default function HomePage() {
       });
 
       setWaitingList((prev) => {
-        const next = ((Array.isArray(prev) && prev) || []).filter((x) => String((x && x.submissionId) || "") !== sid);
+        const next = ((Array.isArray(prev) && prev) || []).filter(
+          (x) => String((x && x.submissionId) || "") !== sid
+        );
         writeWaitingList(next);
         return next;
       });
@@ -989,7 +1518,6 @@ export default function HomePage() {
             ? new Date(x.createdAt).getTime()
             : nowEpochMs;
 
-        // expiresAt / remainingMs normalize
         let expiresAtMs = null;
         if (x && x.expiresAt) {
           const t = new Date(x.expiresAt).getTime();
@@ -1133,7 +1661,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-white font-inter">
       <div className="border-b border-[#EDEDED]">
-        <div className="max-w-[800px] mx-auto px-6 h-[64px] flex items-center justify-between">
+        <div className="max-w-[960px] mx-auto px-6 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 border-4 border-[#2563FF] rounded-full" />
             <span className="text-[16px] font-semibold text-[#2B2B2B]">Task Dash{isDemo ? " (Demo)" : ""}</span>
@@ -1196,88 +1724,201 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="max-w-[800px] mx-auto px-6 py-8">
-        {/* Balance Card */}
-        <div className="bg-white border border-[#F1F1F1] rounded-xl p-8 mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex-1">
-              <div className="text-[13px] text-[#7A7A7A] mb-1">Available Balance</div>
-              <div className="text-[32px] font-semibold text-[#2B2B2B]">{fmtUsd(availableUsd)}</div>
-              {reservedUsd > 0 ? (
-                <div className="text-[12px] text-[#F59E0B] mt-1">{fmtUsd(reservedUsd)} reserved (withdrawal pending)</div>
-              ) : null}
+      <div className="max-w-[960px] mx-auto px-6 py-8">
+        {/* Hero / Wallet / Start */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-6 mb-6">
+          <div className="bg-white border border-[#F1F1F1] rounded-2xl p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center rounded-full bg-[#EFF6FF] border border-[#DBEAFE] px-3 py-1 text-[12px] font-semibold text-[#1D4ED8]">
+                  Skill-based task platform
+                </div>
+                <h1 className="mt-4 text-[28px] leading-[1.15] font-semibold text-[#2B2B2B]">
+                  Practice first, then enter the real task when you are ready.
+                </h1>
+                <p className="mt-3 text-[14px] leading-6 text-[#6B7280] max-w-[640px]">
+                  Choose a tier, open the task, try the practice board, and only then confirm participation with
+                  <strong> Ready for Task</strong>. Your participation amount is not reserved at Start.
+                </p>
+              </div>
+
+              <div className="hidden md:flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F8FAFF] border border-[#E0E7FF]">
+                <Trophy size={24} className="text-[#2563FF]" />
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+                <div className="text-[12px] font-semibold text-[#6B7280]">Step 1</div>
+                <div className="mt-1 text-[14px] font-semibold text-[#2B2B2B]">Select a tier</div>
+                <div className="mt-1 text-[12px] text-[#7A7A7A]">Pick your task level and see queue activity.</div>
+              </div>
+
+              <div className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+                <div className="text-[12px] font-semibold text-[#6B7280]">Step 2</div>
+                <div className="mt-1 text-[14px] font-semibold text-[#2B2B2B]">Practice for free</div>
+                <div className="mt-1 text-[12px] text-[#7A7A7A]">
+                  Start opens the practice screen. No charge happens there.
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+                <div className="text-[12px] font-semibold text-[#6B7280]">Step 3</div>
+                <div className="mt-1 text-[14px] font-semibold text-[#2B2B2B]">Ready confirms entry</div>
+                <div className="mt-1 text-[12px] text-[#7A7A7A]">
+                  The participation amount is reserved only when you press Ready for Task.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-[#F1F1F1] rounded-2xl p-7">
+            <div className="flex items-center gap-2">
+              <Wallet size={18} className="text-[#2563FF]" />
+              <div className="text-[13px] font-semibold text-[#6B7280]">Wallet</div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-[12px] text-[#7A7A7A]">Available Balance</div>
+              <div className="mt-1 text-[34px] leading-none font-semibold text-[#2B2B2B]">{fmtUsd(availableUsd)}</div>
+              {reservedUsd > 0 ? (
+                <div className="mt-2 text-[12px] text-[#D97706]">
+                  {fmtUsd(reservedUsd)} currently reserved
+                </div>
+              ) : (
+                <div className="mt-2 text-[12px] text-[#7A7A7A]">
+                  {isDemo ? "Demo funds only." : "Available for future task participation."}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 onClick={() => setShowAddFundsModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-[#10B981] text-white text-[13px] font-semibold rounded-lg hover:bg-[#059669]"
+                className="h-[46px] flex items-center justify-center gap-2 bg-[#10B981] text-white text-[13px] font-semibold rounded-xl hover:bg-[#059669]"
               >
                 <Plus size={16} />
-                Add Funds
+                {isDemo ? "Add Demo Funds" : "Add Funds"}
               </button>
+
               <button
                 onClick={() => setShowWithdrawModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg hover:border-[#2563FF]"
+                className="h-[46px] flex items-center justify-center gap-2 bg-white border border-[#E5E7EB] text-[#2B2B2B] text-[13px] font-semibold rounded-xl hover:border-[#2563FF]"
               >
                 Withdraw
               </button>
             </div>
-          </div>
 
-          {/* Select Task Price */}
-          <div className="mb-6">
-            <div className="text-sm text-gray-500 mb-2">Select Task Tier (Entry Fee)</div>
-
-            <div className="grid grid-cols-5 gap-2">
-              {PRICE_OPTIONS.map((price) => {
-                const disabled = availableUsd < price;
-
-                return (
-                  <button
-                    key={price}
-                    onClick={() => setSelectedPrice(price)}
-                    disabled={disabled}
-                    className={`h-[60px] rounded-lg text-[18px] font-semibold transition-all relative ${
-                      selectedPrice === price
-                        ? "bg-[#2563FF] text-white border-2 border-[#2563FF]"
-                        : disabled
-                        ? "bg-[#F5F5F5] text-[#C3C3C3] border-2 border-[#E5E5E5] cursor-not-allowed"
-                        : "bg-white text-[#2B2B2B] border-2 border-[#E5E5E5] hover:border-[#2563FF]"
-                    }`}
-                  >
-                    ${price}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 text-[12px] text-[#7A7A7A]">
-              Entry fee is paid to the platform. Compensation is determined by performance evaluation (not a wager).
+            <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+              <div className="text-[12px] font-semibold text-[#6B7280]">Important</div>
+              <div className="mt-1 text-[12px] leading-5 text-[#7A7A7A]">
+                Task Dash is a performance-evaluated platform. Compensation is determined by completed work quality
+                and timing, not by user-to-user wagering.
+              </div>
             </div>
           </div>
+        </div>
 
-          <button
-            onClick={handleAcceptJob}
-            disabled={selectedPrice == null || availableUsd < Number(selectedPrice)}
-            className="w-full h-[56px] bg-[#2563FF] text-white text-[16px] font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1E40AF]"
-          >
-            {selectedPrice == null
-              ? "Select Tier First"
-              : !isDemo && Number(waitingCounts[String(selectedPrice)] || 0) > 0
-              ? `Start Task ($${Number(selectedPrice).toFixed(2)} Entry Fee) - ${Number(waitingCounts[String(selectedPrice)] || 0)} waiting`
-              : `Start Task ($${Number(selectedPrice).toFixed(2)} Entry Fee)`}
-          </button>
+        {/* Tier selection / start */}
+        <div className="bg-white border border-[#F1F1F1] rounded-2xl p-7 mb-6">
+          <SectionTitle
+            title="Choose a Task Tier"
+            subtitle="Queue activity is shown per tier. Start opens practice first."
+            right={
+              !isDemo ? (
+                <div className="text-[12px] text-[#7A7A7A]">
+                  Total waiting: <span className="font-semibold text-[#2B2B2B]">{totalWaitingCount}</span>
+                </div>
+              ) : (
+                <div className="text-[12px] text-[#7A7A7A]">Demo mode</div>
+              )
+            }
+          />
 
-          {selectedPrice != null && availableUsd < Number(selectedPrice) ? (
-            <p className="text-[12px] text-[#C33] text-center mt-3">Insufficient balance. Contact admin for more funds.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+            {PRICE_OPTIONS.map((price) => {
+              const disabled = !isDemo && availableUsd < price;
+              const selected = Number(selectedPrice) === Number(price);
+              const waiting = Number(waitingCounts[String(price)] || 0);
+
+              return (
+                <button
+                  key={price}
+                  type="button"
+                  onClick={() => setSelectedPrice(price)}
+                  disabled={disabled}
+                  className={`rounded-2xl border p-4 text-left transition-all ${
+                    selected
+                      ? "border-[#2563FF] bg-[#F8FAFF] shadow-[0_10px_24px_rgba(37,99,255,0.10)]"
+                      : disabled
+                      ? "border-[#E5E7EB] bg-[#F9FAFB] opacity-60 cursor-not-allowed"
+                      : "border-[#E5E7EB] bg-white hover:border-[#2563FF]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-[22px] font-semibold text-[#2B2B2B]">${price}</div>
+                    {selected ? (
+                      <div className="rounded-full bg-[#2563FF] px-2.5 py-1 text-[11px] font-semibold text-white">
+                        Selected
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 text-[12px] text-[#7A7A7A]">
+                    {disabled ? "Need more balance" : "Open task practice"}
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between">
+                    <div className="text-[12px] font-semibold text-[#6B7280]">Queue</div>
+                    <div className="rounded-full border border-[#E5E7EB] bg-[#FAFAFA] px-3 py-1 text-[12px] font-semibold text-[#2B2B2B]">
+                      {waiting}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-center">
+            <div className="rounded-2xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+              <div className="text-[12px] font-semibold text-[#6B7280]">Selected flow</div>
+              <div className="mt-2 text-[14px] text-[#2B2B2B]">
+                <strong>Start Task</strong> → Practice board → <strong>Ready for Task</strong> → participation amount
+                reserved → real timed task
+              </div>
+              <div className="mt-2 text-[12px] text-[#7A7A7A]">
+                {selectedPrice != null
+                  ? `Selected tier: $${Number(selectedPrice).toFixed(2)}`
+                  : "Select a tier to continue."}
+                {!isDemo && selectedPrice != null
+                  ? `  •  Current queue in this tier: ${selectedTierWaiting}`
+                  : ""}
+              </div>
+            </div>
+
+            <button
+              onClick={handleStartTask}
+              disabled={!selectedTierCanStart}
+              className="h-[56px] px-6 rounded-2xl bg-[#2563FF] text-white text-[16px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1E40AF] flex items-center justify-center gap-2"
+            >
+              {selectedPrice == null
+                ? "Select Tier First"
+                : `Start Task Practice ($${Number(selectedPrice).toFixed(2)})`}
+              <ChevronRight size={18} />
+            </button>
+          </div>
+
+          {!isDemo && selectedPrice != null && availableUsd < Number(selectedPrice) ? (
+            <p className="text-[12px] text-[#C33] mt-3">
+              Insufficient balance for this tier. Add funds or select a lower tier.
+            </p>
           ) : null}
         </div>
 
-        {/* Tabs Card */}
+        {/* Activity / tabs */}
         <div className="bg-white border border-[#F1F1F1] rounded-2xl p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="inline-flex rounded-xl border border-[#E7E7E7] bg-white p-1 shadow-[0_6px_16px_rgba(0,0,0,0.06)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="inline-flex flex-wrap rounded-xl border border-[#E7E7E7] bg-white p-1 shadow-[0_6px_16px_rgba(0,0,0,0.06)]">
               <button
                 type="button"
                 onClick={() => setActiveTab("results")}
@@ -1303,7 +1944,7 @@ export default function HomePage() {
                         : "text-[#7A7A7A] hover:text-[#2B2B2B]",
                     ].join(" ")}
                   >
-                    Waiting{waitingList && waitingList.length ? ` (${waitingList.length})` : ""}
+                    Waiting{totalWaitingCount ? ` (${totalWaitingCount})` : ""}
                   </button>
 
                   <button
@@ -1339,11 +1980,11 @@ export default function HomePage() {
               <div className="text-[12px] text-[#7A7A7A]">
                 {activeTab === "waiting"
                   ? waitingLoading
-                    ? "Updating..."
-                    : "Auto-updating"
+                    ? "Updating queue..."
+                    : "Queue auto-updates"
                   : activeTab === "notCompleted"
                   ? forfeitedLoading
-                    ? "Loading..."
+                    ? "Loading task status..."
                     : ""
                   : ""}
               </div>
@@ -1352,62 +1993,60 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* TAB CONTENT */}
-          {activeTab === "results" ? (
-            <RecentResultsPanel
-              recentLoading={recentLoading}
-              recentError={recentError}
-              recentMatches={recentMatches}
-              isDemo={isDemo}
-              fmtWhenShort={fmtWhenShort}
-              fmtElapsed={fmtElapsed}
-              centsToUsd={centsToUsd}
-              shortId={shortId}
-            />
-          ) : null}
+          <div className="mt-6">
+            {activeTab === "results" ? (
+              <RecentResultsPanelInline
+                recentLoading={recentLoading}
+                recentError={recentError}
+                recentMatches={recentMatches}
+                isDemo={isDemo}
+                fmtWhenShort={fmtWhenShort}
+                fmtElapsed={fmtElapsed}
+              />
+            ) : null}
 
-          {!isDemo && activeTab === "waiting" ? (
-            <WaitingPanel
-              waitingError={waitingError}
-              filteredWaitingList={filteredWaitingList}
-              waitingPriceFilter={waitingPriceFilter}
-              setWaitingPriceFilter={setWaitingPriceFilter}
-              PRICE_OPTIONS={PRICE_OPTIONS}
-              waitingLoading={waitingLoading}
-              nowMs={nowMs}
-              fmtWhenShort={fmtWhenShort}
-              fmtRemainingHm={fmtRemainingHm}
-              shortId={shortId}
-            />
-          ) : null}
+            {!isDemo && activeTab === "waiting" ? (
+              <WaitingPanelInline
+                waitingError={waitingError}
+                filteredWaitingList={filteredWaitingList}
+                waitingPriceFilter={waitingPriceFilter}
+                setWaitingPriceFilter={setWaitingPriceFilter}
+                PRICE_OPTIONS={PRICE_OPTIONS}
+                waitingLoading={waitingLoading}
+                nowMs={nowMs}
+                fmtWhenShort={fmtWhenShort}
+                fmtRemainingHm={fmtRemainingHm}
+                waitingCounts={waitingCounts}
+              />
+            ) : null}
 
-          {!isDemo && activeTab === "notCompleted" ? (
-            <NotCompletedPanel
-              forfeitedLoading={forfeitedLoading}
-              forfeitedError={forfeitedError}
-              notCompletedItems={notCompletedItems}
-              labelOfNotCompleted={labelOfNotCompleted}
-              reasonOfNotCompleted={reasonOfNotCompleted}
-              whenOfItem={whenOfItem}
-              shortId={shortId}
-            />
-          ) : null}
+            {!isDemo && activeTab === "notCompleted" ? (
+              <NotCompletedPanelInline
+                forfeitedLoading={forfeitedLoading}
+                forfeitedError={forfeitedError}
+                notCompletedItems={notCompletedItems}
+                labelOfNotCompleted={labelOfNotCompleted}
+                reasonOfNotCompleted={reasonOfNotCompleted}
+                whenOfItem={whenOfItem}
+              />
+            ) : null}
 
-          {!isDemo && activeTab === "refunded" ? (
-            <RefundedPanel refundedItems={refundedItems} fmtWhenShort={fmtWhenShort} shortId={shortId} />
-          ) : null}
+            {!isDemo && activeTab === "refunded" ? (
+              <RefundedPanelInline refundedItems={refundedItems} fmtWhenShort={fmtWhenShort} />
+            ) : null}
+          </div>
         </div>
 
         <a
           href="/rules"
-          className="w-full h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] flex items-center justify-center gap-2 hover:border-[#2563FF] hover:text-[#2563FF]"
+          className="w-full h-[52px] border border-[#E5E5E5] rounded-2xl text-[14px] font-medium text-[#7A7A7A] flex items-center justify-center gap-2 hover:border-[#2563FF] hover:text-[#2563FF]"
         >
           <BookOpen size={16} />
           How Task Dash Works
         </a>
       </div>
 
-      {/* ✅ Admin Modal */}
+      {/* Admin Modal */}
       {showAdmin && adminChecked && isAdmin ? (
         <div className="fixed inset-0 z-[100]">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowAdmin(false)} />
@@ -1497,8 +2136,10 @@ export default function HomePage() {
       {/* Add Funds Modal */}
       {showAddFundsModal ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
-            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">{isDemo ? "Add Demo Credits" : "Add Funds via PayPal"}</h3>
+          <div className="bg-white rounded-2xl p-8 max-w-[400px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">
+              {isDemo ? "Add Demo Credits" : "Add Funds via PayPal"}
+            </h3>
             <p className="text-[13px] text-[#7A7A7A] mb-4">
               {isDemo ? "This adds fake money locally (no payment)." : "You'll be redirected to PayPal to complete the payment."}
             </p>
@@ -1511,7 +2152,7 @@ export default function HomePage() {
                 max="500"
                 value={addFundsAmount}
                 onChange={(e) => setAddFundsAmount(parseFloat(e.target.value) || 1)}
-                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
+                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-xl text-[16px] focus:border-[#2563FF] focus:outline-none"
               />
               <p className="text-[11px] text-[#9B9B9B] mt-1">Minimum: $1 | Maximum: $500</p>
             </div>
@@ -1523,14 +2164,14 @@ export default function HomePage() {
                   setAddFundsAmount(10);
                 }}
                 disabled={processingPayment}
-                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-xl text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddFunds}
                 disabled={processingPayment}
-                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-xl disabled:opacity-50"
               >
                 {processingPayment ? "Processing..." : `Add $${Number(addFundsAmount).toFixed(2)}`}
               </button>
@@ -1542,7 +2183,7 @@ export default function HomePage() {
       {/* Withdraw Modal */}
       {showWithdrawModal ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
+          <div className="bg-white rounded-2xl p-8 max-w-[400px] w-full">
             <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">Withdraw to PayPal</h3>
             <p className="text-[13px] text-[#7A7A7A] mb-4">
               Available balance: <strong>{fmtUsd(availableUsd)}</strong>
@@ -1556,7 +2197,7 @@ export default function HomePage() {
                 step="0.01"
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
-                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
+                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-xl text-[16px] focus:border-[#2563FF] focus:outline-none"
                 placeholder="Enter amount"
               />
             </div>
@@ -1567,7 +2208,7 @@ export default function HomePage() {
                 type="email"
                 value={paypalEmail}
                 onChange={(e) => setPaypalEmail(e.target.value)}
-                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
+                className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-xl text-[16px] focus:border-[#2563FF] focus:outline-none"
                 placeholder="your@email.com"
               />
             </div>
@@ -1580,14 +2221,14 @@ export default function HomePage() {
                   setPaypalEmail("");
                 }}
                 disabled={processingWithdraw}
-                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-xl text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleWithdraw}
                 disabled={processingWithdraw}
-                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-xl disabled:opacity-50"
               >
                 {processingWithdraw ? "Processing..." : "Withdraw"}
               </button>
@@ -1599,29 +2240,46 @@ export default function HomePage() {
       {/* Confirm Modal */}
       {showConfirmModal ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-8 max-w-[400px] w-full">
-            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">Start Task?</h3>
-            <p className="text-[14px] text-[#7A7A7A] mb-6">
-              Entry fee: <strong>${Number(selectedPrice || 0).toFixed(2)}</strong>
-              <br />
-              Balance after: <strong>${(availableUsd - Number(selectedPrice || 0)).toFixed(2)}</strong>
-              <br />
-              <span className="text-[12px] text-[#9CA3AF]">Compensation is paid by the platform based on performance evaluation.</span>
-            </p>
+          <div className="bg-white rounded-2xl p-8 max-w-[440px] w-full">
+            <h3 className="text-[18px] font-semibold text-[#2B2B2B] mb-4">Open task practice?</h3>
+
+            <div className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4 mb-5">
+              <div className="text-[14px] text-[#2B2B2B]">
+                Selected tier: <strong>${Number(selectedPrice || 0).toFixed(2)}</strong>
+              </div>
+              <div className="mt-2 text-[13px] text-[#6B7280] leading-6">
+                Start Task only opens the practice screen.
+                <br />
+                <strong>No participation amount is reserved yet.</strong>
+                <br />
+                The amount is only reserved if you continue and tap <strong>Ready for Task</strong>.
+              </div>
+            </div>
+
+            {!isDemo ? (
+              <div className="mb-6 text-[12px] text-[#7A7A7A]">
+                Available now: <strong>{fmtUsd(availableUsd)}</strong>
+              </div>
+            ) : (
+              <div className="mb-6 text-[12px] text-[#7A7A7A]">
+                Demo mode uses local practice funds only.
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A]"
+                className="flex-1 h-[48px] border border-[#E5E5E5] rounded-xl text-[14px] font-medium text-[#7A7A7A]"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={confirmAcceptJob}
-                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg"
+                onClick={confirmStartTask}
+                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-xl"
               >
-                Confirm
+                Open Practice
               </button>
             </div>
           </div>
