@@ -142,7 +142,7 @@ function computeBackoffMs(elapsedMs) {
 function shortId(id) {
   const s = String(id || "");
   if (!s) return "";
-  return s.length <= 12 ? s : `${s.slice(0, 4)}…${s.slice(-4)}`;
+  return s.length <= 12 ? s : `${s.slice(0, 4)}窶ｦ${s.slice(-4)}`;
 }
 
 function statusUpper(it) {
@@ -556,8 +556,8 @@ export default function HomePage() {
     const selectedUsd = Number(selectedPrice);
     const mode = isDemoModeSafe() ? "demo" : "real";
 
-    // ここでは残高を引かない
-    // Ready for Task 側で reserve / debit する前提
+    // 縺薙％縺ｧ縺ｯ谿矩ｫ倥ｒ蠑輔°縺ｪ縺・
+    // Ready for Task 蛛ｴ縺ｧ reserve / debit 縺吶ｋ蜑肴署
     window.location.href = `/task?price=${encodeURIComponent(String(selectedUsd))}&mode=${encodeURIComponent(mode)}`;
   }, [selectedPrice]);
 
@@ -685,7 +685,7 @@ export default function HomePage() {
         return;
       }
 
-      setAdminWithdrawMsg(`✅ Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`);
+      setAdminWithdrawMsg(`笨・Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`);
 
       try {
         const pb = await getPlatformBalance();
@@ -1267,7 +1267,7 @@ export default function HomePage() {
           <div className="mt-5 rounded-2xl border border-[#ECECEC] bg-[#FCFCFC] p-4">
             <div className="text-[13px] font-semibold text-[#2B2B2B]">Selected flow</div>
             <div className="mt-2 text-[15px] text-[#2B2B2B] leading-[1.8]">
-              Start Practice → Practice board → Ready for Task → participation amount reserved
+              Start Practice 竊・Practice board 竊・Ready for Task 竊・participation amount reserved
             </div>
             {selectedPrice != null ? (
               <div className="mt-2 text-[13px] text-[#7A7A7A]">
@@ -1275,7 +1275,7 @@ export default function HomePage() {
                 {!isDemo ? (
                   <>
                     {" "}
-                    · waiting in this tier: <span className="font-semibold text-[#2B2B2B]">{selectedTierWaiting}</span>
+                    ﾂｷ waiting in this tier: <span className="font-semibold text-[#2B2B2B]">{selectedTierWaiting}</span>
                   </>
                 ) : null}
               </div>
@@ -1615,5 +1615,4 @@ export default function HomePage() {
       ) : null}
     </div>
   );
-}/ /   d e p l o y   t r i g g e r  
- 
+}
