@@ -10,6 +10,7 @@ import {
   getMode as rtGetMode,
   isDemoMode as rtIsDemoMode,
   getBalance,
+  paypalPayout,
   getPlatformBalance,
   acceptJob,
   listWaiting,
@@ -17,7 +18,6 @@ import {
   recentResults,
   listForfeited,
   createPaypalOrder,
-  paypalPayout,
   setMode as rtSetMode,
   addDemoBalance,
   adminPaypalPayout,
@@ -665,6 +665,11 @@ export default function HomePage() {
       return;
     }
 
+    if (amountUsd < 1) {
+      alert("Minimum withdrawal amount is $1.00");
+      return;
+    }
+
     if (amountUsd > Number(availableUsd || 0)) {
       alert(`Insufficient funds. You only have $${Number(availableUsd || 0).toFixed(2)} available.`);
       return;
@@ -677,13 +682,19 @@ export default function HomePage() {
     }
 
     setProcessingWithdraw(true);
+
     try {
-      const amountCents = Math.round(amountUsd * 100);
-      const out = await callPaypalPayout(amountCents, email);
+      const out = await paypalPayout(amountUsd, email);
 
-      if (!out || !out.ok) throw new Error((out && out.error) || "Failed to process withdrawal");
+      if (!out || !out.ok) {
+        throw new Error(
+          out?.message ||
+            out?.error ||
+            "Failed to process withdrawal"
+        );
+      }
 
-      alert(`Withdrawal request submitted! Status: ${out.status || "ok"}`);
+      alert(`Withdrawal request submitted! Status: ${out.status || "PENDING"}`);
       setShowWithdrawModal(false);
       setWithdrawAmount("");
       setPaypalEmail("");
@@ -691,7 +702,7 @@ export default function HomePage() {
       await loadData();
     } catch (error) {
       console.error("Withdraw error:", error);
-      alert((error && error.message) || String(error));
+      alert(error?.message || String(error));
     } finally {
       setProcessingWithdraw(false);
     }
@@ -1570,6 +1581,9 @@ export default function HomePage() {
                 className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
                 placeholder="your@email.com"
               />
+              <p className="text-[12px] text-[#7A7A7A] mt-2">
+                Minimum withdrawal is $1.00. Please make sure your PayPal email is correct.
+              </p>
             </div>
 
             <div className="flex gap-3">
@@ -1583,12 +1597,13 @@ export default function HomePage() {
                 className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
               >
                 Cancel
-              </button>
               <button
-                onClick={handleWithdraw}
-                disabled={processingWithdraw}
-                className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
+                onClick={() => setShowWithdrawModal(true)}
+                disabled={isDemoModeSafe() || Number(availableUsd || 0) < 1}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E5E5E5] text-[#2B2B2B] text-[13px] font-semibold rounded-lg hover:border-[#2563FF] disabled:opacity-50 disabled:cursor-not-allowed"
               >
+                Withdraw
+              </button>
                 {processingWithdraw ? "Processing..." : "Withdraw"}
               </button>
             </div>

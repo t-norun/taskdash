@@ -88,13 +88,7 @@ function makeUuid(): string {
 
 /** payout用 requestId（ブラウザ安全版） */
 function makeRequestId(): string {
-  try {
-    const anyCrypto: any = (globalThis as any).crypto;
-    if (anyCrypto?.randomUUID) return anyCrypto.randomUUID();
-  } catch {}
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random()
-    .toString(16)
-    .slice(2)}`;
+  return makeUuid();
 }
 
 /* =====================================================
