@@ -324,58 +324,6 @@ useEffect(() => {
   if (!isAdmin) setShowAdmin(false);
 }, [adminChecked, isAdmin]);
 
-// Admin出金処理
-const handleAdminWithdraw = useCallback(async () => {
-  setAdminWithdrawMsg("");
-  if (isDemoModeSafe()) {
-    setAdminWithdrawMsg("Admin withdraw is disabled in demo mode.");
-    return;
-  }
-  const email = String(adminWithdrawEmail || "").trim();
-  if (!email || !email.includes("@")) {
-    setAdminWithdrawMsg("Enter a valid PayPal email.");
-    return;
-  }
-  const usd = Number(String(adminWithdrawUsd || "").replace(/[^0-9.]/g, ""));
-  if (!Number.isFinite(usd) || usd <= 0) {
-    setAdminWithdrawMsg("Enter a valid amount in USD.");
-    return;
-  }
-  const amountCents = Math.round(usd * 100);
-  if (amountCents < 100) {
-    setAdminWithdrawMsg("Minimum withdraw is $1.00");
-    return;
-  }
-  setAdminWithdrawing(true);
-  try {
-    const r = await adminPaypalPayout(amountCents, email);
-    if (!r || !r.ok) {
-      if (r && r.error === "INSUFFICIENT_PLATFORM_BALANCE") {
-        const cur = Number(r.balanceCents || 0) / 100;
-        setAdminWithdrawMsg(`Insufficient platform balance. Current: $${cur.toFixed(2)}`);
-      } else if (r && r.error === "FORBIDDEN") {
-        setAdminWithdrawMsg("Forbidden (admin only).");
-      } else if (r && r.error === "PAYOUT_AMOUNT_TOO_SMALL") {
-        const min = Number(r.minCents || 100) / 100;
-        setAdminWithdrawMsg(`Amount too small. Min: $${min.toFixed(2)}`);
-      } else if (r && r.error) {
-        setAdminWithdrawMsg(`Withdraw failed: ${String(r.error)}`);
-      } else {
-        setAdminWithdrawMsg("Withdraw failed: UNKNOWN_ERROR");
-      }
-      return;
-    }
-    setAdminWithdrawMsg(`✅ Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`);
-    try {
-      const pb = await getPlatformBalance();
-      if (pb && pb.ok) setPlatformBalanceUsd(pb.balanceUsd != null ? pb.balanceUsd : null);
-    } catch {}
-  } catch (e) {
-    setAdminWithdrawMsg(`Withdraw error: ${String((e && e.message) || e)}`);
-  } finally {
-    setAdminWithdrawing(false);
-  }
-}, [adminWithdrawEmail, adminWithdrawUsd]);
 
   // ✅ 未ログインは demo を優先（URLに指定がない時）
   useEffect(() => {
