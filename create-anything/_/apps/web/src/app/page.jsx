@@ -261,21 +261,121 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState("results"); // results | waiting | notCompleted | refunded
   const [waitingPriceFilter, setWaitingPriceFilter] = useState("all");
 
-  // admin guard
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminChecked, setAdminChecked] = useState(false);
-  const [platformBalanceUsd, setPlatformBalanceUsd] = useState(null);
+// admin guard
+const [isAdmin, setIsAdmin] = useState(false);
+const [adminChecked, setAdminChecked] = useState(false);
+const [platformBalanceUsd, setPlatformBalanceUsd] = useState(null);
 
-  // Not Completed
-  const [forfeitedItems, setForfeitedItems] = useState([]);
-  const [forfeitedError, setForfeitedError] = useState(null);
-  const [forfeitedLoading, setForfeitedLoading] = useState(false);
+// Admin withdraw
+const [adminWithdrawEmail, setAdminWithdrawEmail] = useState("");
+const [adminWithdrawUsd, setAdminWithdrawUsd] = useState("1.00");
+const [adminWithdrawing, setAdminWithdrawing] = useState(false);
+const [adminWithdrawMsg, setAdminWithdrawMsg] = useState("");
 
-  // Admin withdraw
-  const [adminWithdrawEmail, setAdminWithdrawEmail] = useState("");
-  const [adminWithdrawUsd, setAdminWithdrawUsd] = useState("1.00");
-  const [adminWithdrawing, setAdminWithdrawing] = useState(false);
-  const [adminWithdrawMsg, setAdminWithdrawMsg] = useState("");
+// Admin判定
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    setAdminChecked(false);
+    setIsAdmin(false);
+    setPlatformBalanceUsd(null);
+
+    if (isDemo) {
+      if (!mounted) return;
+      setAdminChecked(true);
+      return;
+    }
+
+    let authed = false;
+    try {
+      authed = Boolean(isAuthenticated());
+    } catch {
+      authed = false;
+    }
+    if (!authed) {
+      if (!mounted) return;
+      setAdminChecked(true);
+      return;
+    }
+
+    try {
+      const r = await getPlatformBalance();
+      if (!mounted) return;
+      if (r && r.ok === true) {
+        setIsAdmin(true);
+        setPlatformBalanceUsd(r.balanceUsd != null ? r.balanceUsd : null);
+      } else {
+        setIsAdmin(false);
+      }
+    } catch {
+      if (!mounted) return;
+      setIsAdmin(false);
+    } finally {
+      if (!mounted) return;
+      setAdminChecked(true);
+    }
+  })();
+  return () => { mounted = false; };
+}, [isDemo]);
+
+// Adminじゃないなら閉じる
+useEffect(() => {
+  if (!adminChecked) return;
+  if (!isAdmin) setShowAdmin(false);
+}, [adminChecked, isAdmin]);
+
+// Admin出金処理
+const handleAdminWithdraw = useCallback(async () => {
+  setAdminWithdrawMsg("");
+  if (isDemoModeSafe()) {
+    setAdminWithdrawMsg("Admin withdraw is disabled in demo mode.");
+    return;
+  }
+  const email = String(adminWithdrawEmail || "").trim();
+  if (!email || !email.includes("@")) {
+    setAdminWithdrawMsg("Enter a valid PayPal email.");
+    return;
+  }
+  const usd = Number(String(adminWithdrawUsd || "").replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(usd) || usd <= 0) {
+    setAdminWithdrawMsg("Enter a valid amount in USD.");
+    return;
+  }
+  const amountCents = Math.round(usd * 100);
+  if (amountCents < 100) {
+    setAdminWithdrawMsg("Minimum withdraw is $1.00");
+    return;
+  }
+  setAdminWithdrawing(true);
+  try {
+    const r = await adminPaypalPayout(amountCents, email);
+    if (!r || !r.ok) {
+      if (r && r.error === "INSUFFICIENT_PLATFORM_BALANCE") {
+        const cur = Number(r.balanceCents || 0) / 100;
+        setAdminWithdrawMsg(`Insufficient platform balance. Current: $${cur.toFixed(2)}`);
+      } else if (r && r.error === "FORBIDDEN") {
+        setAdminWithdrawMsg("Forbidden (admin only).");
+      } else if (r && r.error === "PAYOUT_AMOUNT_TOO_SMALL") {
+        const min = Number(r.minCents || 100) / 100;
+        setAdminWithdrawMsg(`Amount too small. Min: $${min.toFixed(2)}`);
+      } else if (r && r.error) {
+        setAdminWithdrawMsg(`Withdraw failed: ${String(r.error)}`);
+      } else {
+        setAdminWithdrawMsg("Withdraw failed: UNKNOWN_ERROR");
+      }
+      return;
+    }
+    setAdminWithdrawMsg(`✅ Payout requested. Batch: ${r.payoutBatchId || "unknown"} (ref: ${r.referenceId || "n/a"})`);
+    try {
+      const pb = await getPlatformBalance();
+      if (pb && pb.ok) setPlatformBalanceUsd(pb.balanceUsd != null ? pb.balanceUsd : null);
+    } catch {}
+  } catch (e) {
+    setAdminWithdrawMsg(`Withdraw error: ${String((e && e.message) || e)}`);
+  } finally {
+    setAdminWithdrawing(false);
+  }
+}, [adminWithdrawEmail, adminWithdrawUsd]);
 
   // ✅ 未ログインは demo を優先（URLに指定がない時）
   useEffect(() => {
