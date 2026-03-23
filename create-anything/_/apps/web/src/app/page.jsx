@@ -234,6 +234,10 @@ export default function HomePage() {
   const [waitingLoading, setWaitingLoading] = useState(false);
   const [waitingError, setWaitingError] = useState(null);
 
+  const [forfeitedItems, setForfeitedItems] = useState([]);
+  const [forfeitedLoading, setForfeitedLoading] = useState(false);
+  const [forfeitedError, setForfeitedError] = useState(null);
+
   const [refundedList, setRefundedList] = useState([]);
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
