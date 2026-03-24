@@ -29,31 +29,39 @@ export default function PayPalSuccessPage() {
     const fetchBalance = async () => {
       const r2 = await authenticatedFetch("/api/user/balance", { method: "GET" });
       const t2 = await r2.text();
+
       let b = null;
       try {
         b = JSON.parse(t2);
       } catch {}
-      if (!r2.ok) throw new Error(b?.error || t2 || `balance failed (${r2.status})`);
+
+      if (!r2.ok) {
+        throw new Error(b?.error || t2 || `balance failed (${r2.status})`);
+      }
+
       setBalance(b);
       return b;
     };
 
     const run = async () => {
       try {
-        // すでにこのセッションで処理済みなら capture をスキップして表示を復元
+        // すでにこのセッションで処理済みなら capture をスキップ
         if (sessionStorage.getItem(guardKey) === "1") {
-          setStatus("success");
-          setMessage("Already processed (session).");
-
-          // 保存済み金額を復元（過去確認用）
           const saved = Number(sessionStorage.getItem(`pp_amount_${token}`) || 0);
+
+          setStatus("success");
           setAmount(saved);
+          setMessage("Deposit completed.");
 
           await fetchBalance();
+
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 1200);
+
           return;
         }
 
-        // capture
         const r = await authenticatedFetch("/api/paypal/capture-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -61,39 +69,32 @@ export default function PayPalSuccessPage() {
         });
 
         const t = await r.text();
+
         let j = null;
         try {
           j = JSON.parse(t);
         } catch {}
 
-        if (!r.ok) throw new Error(j?.error || t || `capture failed (${r.status})`);
+        if (!r.ok) {
+          throw new Error(j?.error || t || `capture failed (${r.status})`);
+        }
 
-        // 金額計算: captured.value → amount → deposit.units/100
+        // 金額計算
         const capturedAmount =
           Number(j?.captured?.value ?? j?.amount ?? 0) ||
           Number(j?.deposit?.units ?? 0) / 100;
 
+        const already = Boolean(j?.deposit?.alreadyApplied ?? j?.alreadyApplied ?? false);
+
         setStatus("success");
         setAmount(capturedAmount);
+        setMessage(already ? "This deposit was already applied." : "Deposit completed successfully.");
 
-        // alreadyApplied の場所は j.deposit.alreadyApplied のはずなので両対応
-        const already =
-          Boolean(j?.deposit?.alreadyApplied ?? j?.alreadyApplied ?? false);
-
-        setMessage(
-          already
-            ? "Already applied."
-            : `+$${capturedAmount.toFixed(2)} added.`
-        );
-
-        // 今回の入金額を保存（過去確認用）
         sessionStorage.setItem(`pp_amount_${token}`, String(capturedAmount));
         sessionStorage.setItem(guardKey, "1");
 
-        // 残高即更新
         await fetchBalance();
 
-        // 成功時は1.2秒後にトップへ戻る
         setTimeout(() => {
           window.location.href = "/";
         }, 1200);
@@ -114,54 +115,95 @@ export default function PayPalSuccessPage() {
         placeItems: "center",
         padding: 24,
         fontFamily: "system-ui",
+        background: "#f8fafc",
       }}
     >
       <div
         style={{
           width: 420,
           maxWidth: "100%",
-          border: "1px solid #eee",
-          borderRadius: 12,
-          padding: 20,
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 16,
+          padding: 24,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
         }}
       >
-        <h1 style={{ margin: 0, fontSize: 18 }}>PayPal Result</h1>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>PayPal Deposit</h1>
 
-        {status === "processing" && <p style={{ marginTop: 12 }}>Processing…</p>}
+        {status === "processing" && (
+          <div style={{ marginTop: 16 }}>
+            <p style={{ margin: 0, fontSize: 15, color: "#374151" }}>Processing your payment...</p>
+            <p style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>
+              Please wait a moment.
+            </p>
+          </div>
+        )}
 
         {status === "success" && (
-          <div style={{ marginTop: 12 }}>
-            <p>{message}</p>
-            <p style={{ fontWeight: 700 }}>+${amount.toFixed(2)}</p>
+          <div style={{ marginTop: 16 }}>
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "#ecfdf5",
+                color: "#065f46",
+                fontWeight: 600,
+              }}
+            >
+              {message}
+            </div>
 
-            {/* ユーザー向け残高表示 */}
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 13, color: "#6b7280" }}>Added amount</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: "#111827", marginTop: 4 }}>
+                +${amount.toFixed(2)}
+              </div>
+            </div>
+
             {balance && typeof balance.balance === "number" && (
-              <p style={{ fontWeight: 700, fontSize: 20 }}>
-                Balance: {formatUSD(balance.balance)}
-              </p>
+              <div style={{ marginTop: 18 }}>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>Current balance</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "#111827", marginTop: 4 }}>
+                  {formatUSD(balance.balance)}
+                </div>
+              </div>
             )}
 
-            {balance && (
-              <pre
-                style={{
-                  background: "#fafafa",
-                  padding: 12,
-                  borderRadius: 8,
-                  overflow: "auto",
-                }}
-              >
-                {JSON.stringify(balance, null, 2)}
-              </pre>
-            )}
-
-            <p style={{ color: "#666", fontSize: 12 }}>Redirecting…</p>
+            <p style={{ marginTop: 18, color: "#6b7280", fontSize: 12 }}>
+              Redirecting to home...
+            </p>
           </div>
         )}
 
         {status === "error" && (
-          <div style={{ marginTop: 12 }}>
-            <p style={{ color: "crimson" }}>{message}</p>
-            <a href="/">Back</a>
+          <div style={{ marginTop: 16 }}>
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "#fef2f2",
+                color: "#b91c1c",
+                fontWeight: 600,
+              }}
+            >
+              Payment processing failed.
+            </div>
+
+            <p style={{ marginTop: 12, color: "#7f1d1d", fontSize: 14 }}>{message}</p>
+
+            <a
+              href="/"
+              style={{
+                display: "inline-block",
+                marginTop: 12,
+                color: "#2563eb",
+                textDecoration: "none",
+                fontWeight: 600,
+              }}
+            >
+              Back to home
+            </a>
           </div>
         )}
       </div>
