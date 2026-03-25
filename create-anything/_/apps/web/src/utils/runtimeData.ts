@@ -423,7 +423,7 @@ function removeWaiting(submissionId: string) {
    DEMO CPU MATCH (local “mini DB”)
    - submitTask() で CPU相手の結果を作って保存
    - checkMatch() で revealAt までは waiting、過ぎたら matched を返す
-   - 経済ルール：pot=2*stake, 90/5/5
+   - 経済ルール：固定配分テーブル（1.94固定, 運営3%）
 ===================================================== */
 
 const DEMO_MATCH_KEY = "taskdash_demo_matches_v1";
@@ -438,7 +438,6 @@ type DemoMatch = {
 
   priceUsd: number;
   stakeCents: number;
-  potCents: number;
 
   platformFeeCents: number;
   userPayoutCents: number;
@@ -518,6 +517,58 @@ function getDemoMatchBySubmissionId(submissionId: string): DemoMatch | null {
     if (x?.submissionId === sid) return x;
   }
   return null;
+}
+
+// 固定配分テーブル（本番と同ルール、合計常に 1.94x fee, 運営3%）
+// demo スコアは「小さい=良い」スケール → HIGH_THRESHOLD以下が高成績
+// - 両方 HIGH 以下        → 0.97 + 0.97
+// - 片方のみ HIGH 以下    → 1.64 + 0.30
+// - 両方 HIGH 以下 diff0-4 → 1.20 + 0.74
+// - 両方 HIGH 以下 diff5-9 → 1.32 + 0.62
+// - 両方 HIGH 以下 diff10+ → 1.44 + 0.50
+const DEMO_HIGH_THRESHOLD = 50; // demo: score<=50（≒5秒以内）が本番70以上相当
+function calcDemoPayouts(
+  playerScore: number,
+  cpuScore: number,
+  outcome: "win" | "lose" | "draw",
+  stakeCents: number
+): { userPayoutCents: number; cpuPayoutCents: number; platformFeeCents: number } {
+  const fee = Math.max(100, Math.trunc(Number(stakeCents) || 0));
+  const totalPool = fee * 2;
+  const platformFeeCents = Math.floor(totalPool * 0.03);
+
+  const playerHigh = playerScore <= DEMO_HIGH_THRESHOLD;
+  const cpuHigh = cpuScore <= DEMO_HIGH_THRESHOLD;
+  const diff = Math.abs(playerScore - cpuScore);
+  const isTie = outcome === "draw";
+
+  let winnerRate: number;
+  let loserRate: number;
+
+  if (isTie || (!playerHigh && !cpuHigh)) {
+    winnerRate = 0.97;
+    loserRate = 0.97;
+  } else if (playerHigh !== cpuHigh) {
+    winnerRate = 1.64;
+    loserRate = 0.30;
+  } else if (diff <= 4) {
+    winnerRate = 1.20;
+    loserRate = 0.74;
+  } else if (diff <= 9) {
+    winnerRate = 1.32;
+    loserRate = 0.62;
+  } else {
+    winnerRate = 1.44;
+    loserRate = 0.50;
+  }
+
+  const payoutWinner = Math.floor(fee * winnerRate);
+  const payoutLoser = Math.max(0, totalPool - platformFeeCents - payoutWinner);
+
+  const userPayoutCents = outcome === "win" ? payoutWinner : outcome === "lose" ? payoutLoser : payoutWinner;
+  const cpuPayoutCents  = outcome === "win" ? payoutLoser  : outcome === "lose" ? payoutWinner : payoutLoser;
+
+  return { userPayoutCents, cpuPayoutCents, platformFeeCents };
 }
 
 // プレイヤー強さ推定
@@ -789,30 +840,9 @@ export async function submitTask(payload: any) {
     const cpuScore = generateCpuScore(player.score, cpuLevel);
     const outcome = decideOutcome(player.score, cpuScore);
 
-    // pot=2*stake, 90/5/5（drawは両者返金＆手数料0にする）
-    const potCents = stakeCents * 2;
-    const winnerPayoutCents = Math.round(potCents * 0.9);
-    const loserPayoutCents = Math.round(potCents * 0.05);
-    const feeCents = potCents - winnerPayoutCents - loserPayoutCents; // 誤差吸収
-
-    let userPayoutCents = 0;
-    let cpuPayoutCents = 0;
-    let platformFeeCents = 0;
-
-    if (outcome === "win") {
-      userPayoutCents = winnerPayoutCents;
-      cpuPayoutCents = loserPayoutCents;
-      platformFeeCents = feeCents;
-    } else if (outcome === "lose") {
-      userPayoutCents = loserPayoutCents;
-      cpuPayoutCents = winnerPayoutCents;
-      platformFeeCents = feeCents;
-    } else {
-      // draw
-      userPayoutCents = stakeCents;
-      cpuPayoutCents = stakeCents;
-      platformFeeCents = 0;
-    }
+    // 固定配分テーブルで payout を決定（本番と同ルール）
+    const { userPayoutCents, cpuPayoutCents, platformFeeCents } =
+      calcDemoPayouts(player.score, cpuScore, outcome, stakeCents);
 
     // “演出” 用に少し待たせる（0.7〜1.4秒）
     const now = Date.now();
@@ -822,7 +852,7 @@ export async function submitTask(payload: any) {
     // ★ユーザー残高：acceptで -stake 済みなので、ここでは payout を足すだけ
     setDemoBalanceCents(getDemoBalanceCents() + userPayoutCents);
 
-    // CPU/Platform 内部勘定（完全一致）
+    // CPU/Platform 内部勘定
     addDemoCpuCents(cpuPayoutCents);
     addDemoPlatformCents(platformFeeCents);
 
@@ -835,7 +865,6 @@ export async function submitTask(payload: any) {
       revealAt,
       priceUsd,
       stakeCents,
-      potCents,
       platformFeeCents,
       userPayoutCents,
       cpuPayoutCents,
@@ -908,7 +937,6 @@ export async function checkMatch(submissionId: string) {
         matchId: m.matchId,
         priceUsd: m.priceUsd,
         stakeCents: m.stakeCents,
-        potCents: m.potCents,
         platformFeeCents: m.platformFeeCents,
         userPayoutCents: m.userPayoutCents,
         outcome: m.outcome,
@@ -947,9 +975,7 @@ export async function recentResults(limit = 5) {
         outcome: m.outcome,
         deltaUsd: m.deltaUsd,
 
-        // 90/5/5の内訳（UIが拾える）
         stakeCents: m.stakeCents,
-        potCents: m.potCents,
         platformFeeCents: m.platformFeeCents,
         userPayoutCents: m.userPayoutCents,
 
