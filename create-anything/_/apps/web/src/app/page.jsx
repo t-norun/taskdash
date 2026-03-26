@@ -257,6 +257,7 @@ export default function HomePage() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [paypalEmail, setPaypalEmail] = useState("");
   const [processingWithdraw, setProcessingWithdraw] = useState(false);
+  const [withdrawError, setWithdrawError] = useState(""); // NEW: inline error for withdraw modal
 
   // "Refund in" 用（60秒更新）
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -711,25 +712,34 @@ useEffect(() => {
       return;
     }
 
+    setWithdrawError(""); // NEW: clear previous error
+
     const amountUsd = parseFloat(String(withdrawAmount || "").trim());
     if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-      alert("Please enter a valid amount");
+      setWithdrawError("Please enter a valid amount"); // NEW:
       return;
     }
 
-    if (amountUsd < 1) {
-      alert("Minimum withdrawal amount is $1.00");
+    // NEW: min $10
+    if (amountUsd < 10) {
+      setWithdrawError("Minimum withdrawal is $10"); // NEW:
+      return;
+    }
+
+    // NEW: max $100
+    if (amountUsd > 100) {
+      setWithdrawError("Maximum withdrawal is $100"); // NEW:
       return;
     }
 
     if (amountUsd > Number(availableUsd || 0)) {
-      alert(`Insufficient funds. You only have $${Number(availableUsd || 0).toFixed(2)} available.`);
+      setWithdrawError("Amount exceeds available balance"); // NEW:
       return;
     }
 
     const email = String(paypalEmail || "").trim();
     if (!email || !email.includes("@")) {
-      alert("Please enter a valid PayPal email address");
+      setWithdrawError("Please enter a valid PayPal email"); // NEW:
       return;
     }
 
@@ -739,22 +749,27 @@ useEffect(() => {
       const out = await paypalPayout(amountUsd, email);
 
       if (!out || !out.ok) {
-        throw new Error(
-          out?.message ||
-            out?.error ||
-            "Failed to process withdrawal"
-        );
+        // NEW: map backend error codes to user-friendly messages
+        const code = out?.code || out?.error;
+        const codeMessages = {
+          PAYOUT_AMOUNT_TOO_SMALL: "Minimum withdrawal is $10",
+          PAYOUT_AMOUNT_TOO_LARGE: "Maximum withdrawal is $100",
+          PAYOUT_LIMIT_DAILY: "You can request withdrawal once per day",
+          INSUFFICIENT_BALANCE: "Amount exceeds available balance",
+        };
+        throw new Error(codeMessages[code] || out?.message || out?.error || "Failed to process withdrawal");
       }
 
       alert(`Withdrawal request submitted! Status: ${out.status || "PENDING"}`);
       setShowWithdrawModal(false);
       setWithdrawAmount("");
       setPaypalEmail("");
+      setWithdrawError(""); // NEW:
 
       await loadData();
     } catch (error) {
       console.error("Withdraw error:", error);
-      alert(error?.message || String(error));
+      setWithdrawError(error?.message || String(error)); // NEW: inline error
     } finally {
       setProcessingWithdraw(false);
     }
@@ -1615,28 +1630,35 @@ useEffect(() => {
               <label className="text-[13px] font-medium text-[#2B2B2B] mb-2 block">Amount (USD)</label>
               <input
                 type="number"
-                min="0.01"
+                min="10" // NEW: $10 minimum
+                max="100" // NEW: $100 maximum
                 step="0.01"
                 value={withdrawAmount}
-                onChange={(e) => setWithdrawAmount(e.target.value)}
+                onChange={(e) => { setWithdrawAmount(e.target.value); setWithdrawError(""); }} // NEW: clear error on change
                 className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
-                placeholder="Enter amount"
+                placeholder="Enter amount ($10 – $100)"
               />
             </div>
 
-            <div className="mb-6">
+            <div className="mb-4">
               <label className="text-[13px] font-medium text-[#2B2B2B] mb-2 block">PayPal Email</label>
               <input
                 type="email"
                 value={paypalEmail}
-                onChange={(e) => setPaypalEmail(e.target.value)}
+                onChange={(e) => { setPaypalEmail(e.target.value); setWithdrawError(""); }} // NEW: clear error on change
                 className="w-full h-[48px] px-4 border-2 border-[#E5E5E5] rounded-lg text-[16px] focus:border-[#2563FF] focus:outline-none"
                 placeholder="your@email.com"
               />
               <p className="text-[12px] text-[#7A7A7A] mt-2">
-                Minimum withdrawal is $1.00. Please make sure your PayPal email is correct.
+                {/* NEW: updated hint text */}
+                Minimum withdrawal is $10.00. Maximum withdrawal is $100.00. You can request withdrawal once per day. Please make sure your PayPal email is correct.
               </p>
             </div>
+
+            {/* NEW: inline error display */}
+            {withdrawError ? (
+              <p className="text-[13px] text-red-600 mb-4">{withdrawError}</p>
+            ) : null}
 
             <div className="flex gap-3">
               <button
@@ -1644,6 +1666,7 @@ useEffect(() => {
                   setShowWithdrawModal(false);
                   setWithdrawAmount("");
                   setPaypalEmail("");
+                  setWithdrawError(""); // NEW: clear error on cancel
                 }}
                 disabled={processingWithdraw}
                 className="flex-1 h-[48px] border border-[#E5E5E5] rounded-lg text-[14px] font-medium text-[#7A7A7A] disabled:opacity-50"
@@ -1653,7 +1676,15 @@ useEffect(() => {
 
               <button
                 onClick={handleWithdraw}
-                disabled={processingWithdraw}
+                // NEW: disabled when amount is out of range, exceeds balance, email invalid, or submitting
+                disabled={
+                  processingWithdraw ||
+                  !withdrawAmount ||
+                  parseFloat(withdrawAmount) < 10 ||
+                  parseFloat(withdrawAmount) > 100 ||
+                  parseFloat(withdrawAmount) > Number(availableUsd || 0) ||
+                  !String(paypalEmail || "").trim().includes("@")
+                }
                 className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
               >
                 {processingWithdraw ? "Processing..." : "Withdraw"}

@@ -30,9 +30,12 @@ export function WalletTab({ wallet, onWithdrawSuccess }) {
         </h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <div className="text-[13px] text-[#7A7A7A] mb-1">Amount</div>
+            <div className="text-[13px] text-[#7A7A7A] mb-1">Amount ($10 – $100)</div>{/* NEW: range hint */}
             <input
               type="number"
+              min="10" // NEW: $10 minimum
+              max="100" // NEW: $100 maximum
+              step="0.01"
               value={withdrawAmount}
               onChange={(e) => setWithdrawAmount(e.target.value)}
               className="w-full px-3 py-2 border border-[#E5E5E5] rounded-md text-[13px] text-[#2B2B2B] bg-[#F8F9FA] focus:outline-none focus:border-[#2563FF]"
@@ -53,7 +56,13 @@ export function WalletTab({ wallet, onWithdrawSuccess }) {
         <div className="mt-4">
           <button
             onClick={handleWithdraw}
-            className="w-full flex items-center justify-center px-4 py-2 border border-[#2563FF] rounded-md text-[14px] font-medium text-[#2563FF] bg-[#F8F9FA] hover:bg-[#F1F1F1] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563FF]"
+            // NEW: disabled when amount is out of $10–$100 range
+            disabled={
+              !withdrawAmount ||
+              parseFloat(withdrawAmount) < 10 ||
+              parseFloat(withdrawAmount) > 100
+            }
+            className="w-full flex items-center justify-center px-4 py-2 border border-[#2563FF] rounded-md text-[14px] font-medium text-[#2563FF] bg-[#F8F9FA] hover:bg-[#F1F1F1] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563FF] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Request Withdrawal
           </button>

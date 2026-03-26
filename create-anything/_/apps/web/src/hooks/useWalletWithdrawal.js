@@ -12,6 +12,18 @@ export function useWalletWithdrawal(wallet, onSuccess) {
       return;
     }
 
+    // NEW: min $10
+    if (amount < 10) {
+      alert("Minimum withdrawal is $10");
+      return;
+    }
+
+    // NEW: max $100
+    if (amount > 100) {
+      alert("Maximum withdrawal is $100");
+      return;
+    }
+
     if (amount > wallet?.balance) {
       alert("Insufficient balance");
       return;
