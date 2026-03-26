@@ -41,10 +41,30 @@ export default function RecentResultsPanel({
         const badge =
           outcome === "win" ? "Win" : outcome === "lose" ? "Lose" : outcome === "tie" ? "Tie" : outcome ? outcome : "—";
 
+        // NEW: derive user's payout amount
+        // demo: it.userPayoutCents is set directly
+        // real: derive from payoutWinnerCents / payoutLoserCents + outcome
+        const payoutCents =
+          typeof it.userPayoutCents === "number"
+            ? it.userPayoutCents
+            : outcome === "win"
+            ? (typeof it.payoutWinnerCents === "number" ? it.payoutWinnerCents : null)
+            : outcome === "lose"
+            ? (typeof it.payoutLoserCents === "number" ? it.payoutLoserCents : null)
+            : outcome === "tie" || outcome === "draw"
+            ? (typeof it.payoutWinnerCents === "number" ? it.payoutWinnerCents : null)
+            : null;
+
         return (
           <div key={String(id)} className="border border-[#F1F1F1] rounded-xl p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
+                {/* NEW: payout displayed prominently above result badge */}
+                {payoutCents != null ? (
+                  <div className="text-[16px] font-bold text-green-600 mb-1">
+                    Payout: +${centsToUsd(payoutCents).toFixed(2)}
+                  </div>
+                ) : null}
                 <div className="text-[13px] font-semibold text-[#2B2B2B]">
                   Result: <span className="font-bold">{badge}</span>
                   {priceUsd != null ? (
