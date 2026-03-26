@@ -979,8 +979,17 @@ export async function recentResults(limit = 5) {
         platformFeeCents: m.platformFeeCents,
         userPayoutCents: m.userPayoutCents,
 
-        playerScore: m.player.score,
-        cpuScore: m.cpu.score,
+        // NEW: my/opponent with display scores ("big = good") and timeMs
+        // Internal score is "small = strong", so invert for display: 100 - internal
+        my: {
+          score: Math.max(0, 100 - m.player.score),
+          timeMs: m.player.timeMs ?? null,
+        },
+        opponent: {
+          score: Math.max(0, 100 - m.cpu.score),
+          timeMs: m.cpu.timeMs ?? null, // CPU timeMs is null in demo; shows "—"
+        },
+
         createdAt: m.createdAt,
       }));
 
