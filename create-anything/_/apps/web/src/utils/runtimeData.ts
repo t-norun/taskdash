@@ -445,13 +445,15 @@ type DemoMatch = {
 
   player: {
     id: "demo_user";
-    score: number; // 小さいほど強い想定
+    score: number; // NEW: totalScore 0-100, high=good (real-aligned)
+    accuracyScore: number; // NEW:
+    speedScore: number;    // NEW:
     timeMs?: number | null;
   };
   cpu: {
     id: "cpu";
     name: string;
-    score: number;
+    score: number; // NEW: totalScore 0-100, high=good (real-aligned)
     timeMs?: number | null;
     level: number;
   };
@@ -519,17 +521,82 @@ function getDemoMatchBySubmissionId(submissionId: string): DemoMatch | null {
   return null;
 }
 
-// 固定配分テーブル（本番と同ルール、合計常に 1.94x fee, 運営3%）
-// demo スコアは「小さい=良い」スケール → HIGH_THRESHOLD以下が高成績
-// - 両方 HIGH 以下        → 0.97 + 0.97
-// - 片方のみ HIGH 以下    → 1.64 + 0.30
-// - 両方 HIGH 以下 diff0-4 → 1.20 + 0.74
-// - 両方 HIGH 以下 diff5-9 → 1.32 + 0.62
-// - 両方 HIGH 以下 diff10+ → 1.44 + 0.50
-const DEMO_HIGH_THRESHOLD = 50; // demo: score<=50（≒5秒以内）が本番70以上相当
-function calcDemoPayouts(
-  playerScore: number,
-  cpuScore: number,
+// =====================================================
+// NEW: real-aligned demo score / payout helpers
+// Mirrors tasksCompat.routes.ts + shared/constants.ts
+// =====================================================
+
+// NEW: accuracy = inversion count (same as real computeAccuracyInversion)
+// arr is player's submitted order; descending is correct, so arr[i] < arr[j] is an inversion
+function computeDemoAccuracyScore(arr: number[]): number {
+  const n = 10;
+  const totalPairs = (n * (n - 1)) / 2; // 45
+  let inv = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if ((arr[i] ?? 0) < (arr[j] ?? 0)) inv++;
+    }
+  }
+  return Math.max(0, Math.min(100, Math.round((1 - inv / totalPairs) * 100)));
+}
+
+// NEW: real-aligned player score extraction
+// totalScore = accuracy*0.4 + speed*0.6, 0-100, high=good
+const DEMO_TIME_CAP_MS = 60_000; // same cap as real
+function inferPlayerScoreReal(payload: any): {
+  totalScore: number;
+  accuracyScore: number;
+  speedScore: number;
+  timeMs: number | null;
+} {
+  const elapsedMs = Math.max(0, Math.trunc(Number(payload?.elapsedMs ?? payload?.timeMs ?? 0)));
+  const timeMs = elapsedMs > 0 ? elapsedMs : null;
+
+  const ordered: number[] = Array.isArray(payload?.orderedNumbers)
+    ? payload.orderedNumbers.map(Number).filter((n: number) => Number.isFinite(n)).slice(0, 10)
+    : [];
+  const accuracyScore = ordered.length === 10 ? computeDemoAccuracyScore(ordered) : 0;
+
+  const clamped = Math.min(elapsedMs, DEMO_TIME_CAP_MS);
+  const speedScore = Math.max(0, Math.min(100, Math.round((1 - clamped / DEMO_TIME_CAP_MS) * 100)));
+
+  const totalScore = Math.max(0, Math.min(100, Math.round(accuracyScore * 0.4 + speedScore * 0.6)));
+
+  return { totalScore, accuracyScore, speedScore, timeMs };
+}
+
+// NEW: CPU total score generation (0-100, high=good)
+// level 0.0 → base ~25, level 0.5 → base ~55, level 1.0 → base ~85
+function generateCpuScoreReal(cpuLevel01: number): number {
+  const base = Math.round(25 + cpuLevel01 * 60);
+  const spread = Math.round(15 - cpuLevel01 * 8); // harder CPU → tighter spread
+  const noise = Math.floor(Math.random() * (spread * 2 + 1)) - spread;
+  return Math.max(0, Math.min(100, base + noise));
+}
+
+// NEW: real-aligned outcome (high totalScore wins; tie-break on timeMs)
+function decideOutcomeReal(
+  playerTotal: number,
+  cpuTotal: number,
+  playerTimeMs: number | null,
+  cpuTimeMs: number | null
+): "win" | "lose" | "draw" {
+  if (playerTotal > cpuTotal) return "win";
+  if (playerTotal < cpuTotal) return "lose";
+  // exact tie on totalScore → shorter timeMs wins
+  if (playerTimeMs != null && cpuTimeMs != null) {
+    if (playerTimeMs < cpuTimeMs) return "win";
+    if (playerTimeMs > cpuTimeMs) return "lose";
+  }
+  return "draw";
+}
+
+// NEW: real-aligned payout (threshold=70, high-score=good)
+// mirrors calcPayouts() in tasksCompat.routes.ts + PAYOUT_RATES in shared/constants.ts
+const DEMO_SCORE_HIGH_THRESHOLD = 70; // same as real SCORE_HIGH_THRESHOLD
+function calcDemoPayoutsReal(
+  playerTotal: number,
+  cpuTotal: number,
   outcome: "win" | "lose" | "draw",
   stakeCents: number
 ): { userPayoutCents: number; cpuPayoutCents: number; platformFeeCents: number } {
@@ -537,29 +604,24 @@ function calcDemoPayouts(
   const totalPool = fee * 2;
   const platformFeeCents = Math.floor(totalPool * 0.03);
 
-  const playerHigh = playerScore <= DEMO_HIGH_THRESHOLD;
-  const cpuHigh = cpuScore <= DEMO_HIGH_THRESHOLD;
-  const diff = Math.abs(playerScore - cpuScore);
+  const playerHigh = playerTotal >= DEMO_SCORE_HIGH_THRESHOLD;
+  const cpuHigh = cpuTotal >= DEMO_SCORE_HIGH_THRESHOLD;
+  const diff = Math.abs(playerTotal - cpuTotal);
   const isTie = outcome === "draw";
 
   let winnerRate: number;
   let loserRate: number;
 
   if (isTie || (!playerHigh && !cpuHigh)) {
-    winnerRate = 0.97;
-    loserRate = 0.97;
+    winnerRate = 0.97; loserRate = 0.97;   // BOTH_LOW
   } else if (playerHigh !== cpuHigh) {
-    winnerRate = 1.64;
-    loserRate = 0.30;
+    winnerRate = 1.64; loserRate = 0.30;   // ONE_HIGH
   } else if (diff <= 4) {
-    winnerRate = 1.20;
-    loserRate = 0.74;
+    winnerRate = 1.20; loserRate = 0.74;   // BOTH_CLOSE
   } else if (diff <= 9) {
-    winnerRate = 1.32;
-    loserRate = 0.62;
+    winnerRate = 1.32; loserRate = 0.62;   // BOTH_MID
   } else {
-    winnerRate = 1.44;
-    loserRate = 0.50;
+    winnerRate = 1.44; loserRate = 0.50;   // BOTH_FAR
   }
 
   const payoutWinner = Math.floor(fee * winnerRate);
@@ -569,45 +631,6 @@ function calcDemoPayouts(
   const cpuPayoutCents  = outcome === "win" ? payoutLoser  : outcome === "lose" ? payoutWinner : payoutLoser;
 
   return { userPayoutCents, cpuPayoutCents, platformFeeCents };
-}
-
-// プレイヤー強さ推定
-function inferPlayerScore(payload: any): { score: number; timeMs?: number | null } {
-  const timeMs = Number(payload?.timeMs ?? payload?.elapsedMs ?? payload?.elapsed ?? null);
-  const scoreRaw = payload?.score ?? payload?.resultScore ?? payload?.diffScore ?? null;
-
-  if (scoreRaw != null) {
-    const s = Number(scoreRaw);
-    if (Number.isFinite(s)) {
-      return {
-        score: Math.max(1, Math.floor(s)),
-        timeMs: Number.isFinite(timeMs) ? timeMs : null,
-      };
-    }
-  }
-
-  if (Number.isFinite(timeMs) && timeMs > 0) {
-    const s = Math.max(1, Math.floor(timeMs / 100)); // 10秒=100
-    return { score: s, timeMs };
-  }
-
-  return { score: 100, timeMs: null };
-}
-
-// CPUスコア生成（小さいほど強い）
-function generateCpuScore(playerScore: number, cpuLevel01: number) {
-  const baseSpread = 30 - Math.floor(cpuLevel01 * 18); // level高いほどブレ小
-  const bias = Math.floor((cpuLevel01 - 0.5) * 20); // level高いほどCPUが少し強い
-
-  const rand = Math.floor(Math.random() * (baseSpread * 2 + 1)) - baseSpread;
-  const cpuScore = Math.max(1, Math.floor(playerScore + rand - bias));
-  return cpuScore;
-}
-
-function decideOutcome(playerScore: number, cpuScore: number): "win" | "lose" | "draw" {
-  if (playerScore < cpuScore) return "win";
-  if (playerScore > cpuScore) return "lose";
-  return "draw";
 }
 
 /* =====================================================
@@ -834,15 +857,15 @@ export async function submitTask(payload: any) {
     // CPUも同額参加費を払う（内部勘定）
     setDemoCpuCents(getDemoCpuCents() - stakeCents);
 
-    // 強さ推定＆CPU生成
-    const player = inferPlayerScore(payload);
+    // NEW: real-aligned score / outcome / payout
+    const player = inferPlayerScoreReal(payload);      // totalScore 0-100, high=good
     const cpuLevel = getDemoCpuLevel();
-    const cpuScore = generateCpuScore(player.score, cpuLevel);
-    const outcome = decideOutcome(player.score, cpuScore);
+    const cpuTotalScore = generateCpuScoreReal(cpuLevel); // 0-100, high=good
+    const outcome = decideOutcomeReal(player.totalScore, cpuTotalScore, player.timeMs, null);
 
-    // 固定配分テーブルで payout を決定（本番と同ルール）
+    // NEW: payout uses 70-point threshold (same as real)
     const { userPayoutCents, cpuPayoutCents, platformFeeCents } =
-      calcDemoPayouts(player.score, cpuScore, outcome, stakeCents);
+      calcDemoPayoutsReal(player.totalScore, cpuTotalScore, outcome, stakeCents);
 
     // “演出” 用に少し待たせる（0.7〜1.4秒）
     const now = Date.now();
@@ -870,13 +893,15 @@ export async function submitTask(payload: any) {
       cpuPayoutCents,
       player: {
         id: "demo_user",
-        score: player.score,
+        score: player.totalScore,         // NEW: totalScore 0-100 high=good
+        accuracyScore: player.accuracyScore, // NEW:
+        speedScore: player.speedScore,    // NEW:
         timeMs: player.timeMs ?? null,
       },
       cpu: {
         id: "cpu",
         name: cpuLevel >= 0.8 ? "CPU (Hard)" : cpuLevel >= 0.55 ? "CPU (Normal)" : "CPU (Easy)",
-        score: cpuScore,
+        score: cpuTotalScore,             // NEW: totalScore 0-100 high=good
         timeMs: null,
         level: cpuLevel,
       },
@@ -979,14 +1004,13 @@ export async function recentResults(limit = 5) {
         platformFeeCents: m.platformFeeCents,
         userPayoutCents: m.userPayoutCents,
 
-        // NEW: my/opponent with display scores ("big = good") and timeMs
-        // Internal score is "small = strong", so invert for display: 100 - internal
+        // my/opponent: score is now totalScore (0-100, high=good) — no inversion needed
         my: {
-          score: Math.max(0, 100 - m.player.score),
+          score: m.player.score,    // totalScore, high=good
           timeMs: m.player.timeMs ?? null,
         },
         opponent: {
-          score: Math.max(0, 100 - m.cpu.score),
+          score: m.cpu.score,       // totalScore, high=good
           timeMs: m.cpu.timeMs ?? null, // CPU timeMs is null in demo; shows "—"
         },
 
