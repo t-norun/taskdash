@@ -57,11 +57,10 @@ export function WalletTab({ wallet, onWithdrawSuccess }) {
           <button
             onClick={handleWithdraw}
             // NEW: disabled when amount is out of $10–$100 range
-            disabled={
-              !withdrawAmount ||
-              parseFloat(withdrawAmount) < 10 ||
-              parseFloat(withdrawAmount) > 100
-            }
+            disabled={(() => {
+              const amount = parseFloat(withdrawAmount); // NEW: single parse, avoids NaN comparison trap
+              return !withdrawAmount || !Number.isFinite(amount) || amount < 10 || amount > 100;
+            })()}
             className="w-full flex items-center justify-center px-4 py-2 border border-[#2563FF] rounded-md text-[14px] font-medium text-[#2563FF] bg-[#F8F9FA] hover:bg-[#F1F1F1] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563FF] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Request Withdrawal

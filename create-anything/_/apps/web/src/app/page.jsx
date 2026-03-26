@@ -1677,14 +1677,18 @@ useEffect(() => {
               <button
                 onClick={handleWithdraw}
                 // NEW: disabled when amount is out of range, exceeds balance, email invalid, or submitting
-                disabled={
-                  processingWithdraw ||
-                  !withdrawAmount ||
-                  parseFloat(withdrawAmount) < 10 ||
-                  parseFloat(withdrawAmount) > 100 ||
-                  parseFloat(withdrawAmount) > Number(availableUsd || 0) ||
-                  !String(paypalEmail || "").trim().includes("@")
-                }
+                disabled={(() => {
+                  const amount = parseFloat(withdrawAmount); // NEW: single parse to avoid NaN comparison trap
+                  return (
+                    processingWithdraw ||
+                    !withdrawAmount ||
+                    !Number.isFinite(amount) || // NEW: guards NaN ("", "abc", etc.)
+                    amount < 10 ||
+                    amount > 100 ||
+                    amount > Number(availableUsd || 0) ||
+                    !String(paypalEmail || "").trim().includes("@")
+                  );
+                })()}
                 className="flex-1 h-[48px] bg-[#2563FF] text-white text-[14px] font-semibold rounded-lg disabled:opacity-50"
               >
                 {processingWithdraw ? "Processing..." : "Withdraw"}
