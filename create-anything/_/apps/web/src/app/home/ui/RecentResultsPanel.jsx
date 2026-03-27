@@ -25,12 +25,13 @@ export default function RecentResultsPanel({
         const id = it.id || it.matchId || it.submissionId || it.attemptId || idx;
         const outcome = String(it.outcome || "").toLowerCase();
         const when = it.settledAt || it.createdAt || it.updatedAt || null;
+
         const priceUsd =
           typeof it.priceUsd === "number"
             ? it.priceUsd
             : typeof it.stakeCents === "number"
-            ? centsToUsd(it.stakeCents)
-            : null;
+              ? centsToUsd(it.stakeCents)
+              : null;
 
         const youScore = it.my && typeof it.my.score === "number" ? it.my.score : it.playerScore;
         const peerScore = it.opponent && typeof it.opponent.score === "number" ? it.opponent.score : it.cpuScore;
@@ -38,39 +39,45 @@ export default function RecentResultsPanel({
         const youTimeMs = it.my && typeof it.my.timeMs === "number" ? it.my.timeMs : it.playerTimeMs;
         const peerTimeMs = it.opponent && typeof it.opponent.timeMs === "number" ? it.opponent.timeMs : it.cpuTimeMs;
 
-        const badge =
-          outcome === "win" ? "Win" : outcome === "lose" ? "Lose" : outcome === "tie" ? "Tie" : outcome ? outcome : "—";
+        const rewardTier =
+          outcome === "win"
+            ? "Higher reward"
+            : outcome === "lose"
+              ? "Standard reward"
+              : outcome === "tie" || outcome === "draw"
+                ? "Equal reward"
+                : outcome
+                  ? outcome
+                  : "—";
 
-        // NEW: derive user's payout amount
-        // demo: it.userPayoutCents is set directly
-        // real: derive from payoutWinnerCents / payoutLoserCents + outcome
         const payoutCents =
           typeof it.userPayoutCents === "number"
             ? it.userPayoutCents
             : outcome === "win"
-            ? (typeof it.payoutWinnerCents === "number" ? it.payoutWinnerCents : null)
-            : outcome === "lose"
-            ? (typeof it.payoutLoserCents === "number" ? it.payoutLoserCents : null)
-            : outcome === "tie" || outcome === "draw"
-            ? (typeof it.payoutWinnerCents === "number" ? it.payoutWinnerCents : null)
-            : null;
+              ? (typeof it.payoutWinnerCents === "number" ? it.payoutWinnerCents : null)
+              : outcome === "lose"
+                ? (typeof it.payoutLoserCents === "number" ? it.payoutLoserCents : null)
+                : outcome === "tie" || outcome === "draw"
+                  ? (typeof it.payoutWinnerCents === "number" ? it.payoutWinnerCents : null)
+                  : null;
 
         return (
           <div key={String(id)} className="border border-[#F1F1F1] rounded-xl p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                {/* NEW: payout displayed prominently above result badge */}
                 {payoutCents != null ? (
                   <div className="text-[16px] font-bold text-green-600 mb-1">
                     Payout: +${centsToUsd(payoutCents).toFixed(2)}
                   </div>
                 ) : null}
+
                 <div className="text-[13px] font-semibold text-[#2B2B2B]">
-                  Result: <span className="font-bold">{badge}</span>
+                  Reward tier: <span className="font-bold">{rewardTier}</span>
                   {priceUsd != null ? (
                     <span className="text-[#7A7A7A] font-medium"> · Tier ${Number(priceUsd).toFixed(2)}</span>
                   ) : null}
                 </div>
+
                 <div className="text-[12px] text-[#7A7A7A] mt-1">
                   {when ? fmtWhenShort(when) : ""} · ID: {shortId(id)}
                 </div>
@@ -94,8 +101,9 @@ export default function RecentResultsPanel({
                   Score: {youScore != null ? String(youScore) : "—"} · Time: {youTimeMs != null ? fmtElapsed(youTimeMs) : "—"}
                 </div>
               </div>
+
               <div className="rounded-lg border border-[#F1F1F1] p-3">
-                <div className="text-[12px] text-[#7A7A7A]">Opponent</div>
+                <div className="text-[12px] text-[#7A7A7A]">Reference</div>
                 <div className="text-[14px] font-semibold text-[#2B2B2B] mt-1">
                   Score: {peerScore != null ? String(peerScore) : "—"} · Time: {peerTimeMs != null ? fmtElapsed(peerTimeMs) : "—"}
                 </div>
