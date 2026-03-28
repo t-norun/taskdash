@@ -18,9 +18,9 @@ export default function RulesPage() {
             reward.
           </p>
 
-          {/* ✅ 追加（意味付け） */}
           <p className="mb-4 text-sm text-gray-600">
-            Your task results are recorded and used to improve system accuracy and performance.
+            Your task results are recorded and used to improve system accuracy
+            and performance.
           </p>
 
           <h3 className="mb-1 font-semibold">Task Participation</h3>
@@ -33,7 +33,10 @@ export default function RulesPage() {
               This amount acts as a participation fee for accessing the task and
               is used to determine reward calculations.
             </li>
-            <li>All participants within the same period receive identical task data.</li>
+            <li>
+              All participants within the same period receive identical task
+              data.
+            </li>
             <li>Tasks refresh periodically (typically every 24 hours).</li>
           </ul>
 
@@ -41,96 +44,117 @@ export default function RulesPage() {
           <ul className="mb-4 list-disc pl-5">
             <li>You receive 10 numbers (0–999).</li>
             <li>Arrange them in descending order (largest to smallest).</li>
-            <li>Use drag and drop to reorder the numbers.</li>
-            <li>Timing starts when the task begins and ends when you submit.</li>
+            <li>Use drag and drop to reorder.</li>
+            <li>Timing starts when the task begins and ends upon submission.</li>
             <li>Only correctly completed submissions proceed to evaluation.</li>
           </ul>
 
-          <h3 className="mb-1 font-semibold">Evaluation System</h3>
+          <h3 className="mb-1 font-semibold">
+            Evaluation System (Absolute Performance-Based)
+          </h3>
+          <p className="mb-2">Your performance is evaluated based on:</p>
           <ul className="mb-4 list-disc pl-5">
-            <li>Your performance is evaluated based on accuracy and speed.</li>
-            <li>A final score is calculated out of 100.</li>
-            <li>70 points or higher is treated as qualified performance.</li>
-            <li>Below 70 points is treated as basic performance.</li>
+            <li>Accuracy (correct order)</li>
+            <li>Speed (completion time)</li>
+          </ul>
+          <p className="mb-2">A final score is calculated out of 100.</p>
+
+          <h3 className="mb-1 font-semibold">Score Threshold</h3>
+          <ul className="mb-4 list-disc pl-5">
+            <li>70 points or higher → Qualified performance</li>
+            <li>Below 70 → Basic performance</li>
           </ul>
 
           <h3 className="mb-1 font-semibold">Matching System</h3>
           <ul className="mb-4 list-disc pl-5">
-            <li>Valid submissions are paired automatically for evaluation.</li>
-            <li>Matching follows a first-come, anonymous basis.</li>
-            <li>You cannot choose your opponent and cannot be matched with yourself.</li>
-            <li>If no match is immediately available, your submission waits.</li>
+            <li>Qualified submissions are paired automatically.</li>
+            <li>Matching is anonymous and first-come based.</li>
+            <li>You cannot choose your opponent.</li>
+          </ul>
+
+          <p className="mb-2">If no match is immediately available:</p>
+          <ul className="mb-4 list-disc pl-5">
+            <li>Your submission enters a waiting state.</li>
             <li>
               If no match is found within the time limit, your participation fee
-              is automatically returned.
+              is returned.
             </li>
           </ul>
 
-          <h3 className="mb-1 font-semibold">Reward Distribution</h3>
-          <p className="mb-2">
+          <h3 className="mb-1 font-semibold">
+            Reward Distribution (Revised)
+          </h3>
+          <p className="mb-4">
             Rewards are determined primarily by absolute performance, with a
-            limited comparison adjustment when applicable.
+            limited comparative adjustment when applicable.
           </p>
 
+          <h4 className="mb-1 font-semibold">Case 1: Both users score below 70</h4>
           <ul className="mb-4 list-disc pl-5">
-            <li>If both users score below 70, both receive 0.97 × Tier.</li>
-            <li>
-              If one user scores 70 or higher and the other scores below 70:
-              the qualified user receives 1.64 × Tier, and the other user
-              receives 0.30 × Tier.
-            </li>
-            <li>
-              If both users score 70 or higher, rewards are adjusted based on
-              performance difference.
-            </li>
+            <li>Both users receive 0.97 × Tier.</li>
+            <li>No competitive advantage is applied.</li>
           </ul>
 
-          {/* 🔥 ここ修正 */}
-          <h3 className="mb-1 font-semibold">Examples When Both Users Score 70+</h3>
+          <h4 className="mb-1 font-semibold">
+            Case 2: One user ≥ 70, the other &lt; 70
+          </h4>
+          <ul className="mb-4 list-disc pl-5">
+            <li>Qualified user → 1.64 × Tier</li>
+            <li>Non-qualified user → 0.30 × Tier</li>
+            <li>Reward is driven by individual achievement.</li>
+          </ul>
+
+          <h4 className="mb-1 font-semibold">Case 3: Both users ≥ 70</h4>
+          <p className="mb-2">
+            Rewards are adjusted slightly based on score difference:
+          </p>
           <ul className="mb-4 list-disc pl-5">
             <li>Score difference 0–3 → 1.20 × Tier / 0.74 × Tier</li>
             <li>Score difference 4–6 → 1.32 × Tier / 0.62 × Tier</li>
             <li>Score difference 7+ → 1.44 × Tier / 0.50 × Tier</li>
+            <li>Performance comparison has limited influence.</li>
           </ul>
 
-          {/* ✅ 追加 */}
           <p className="mb-4">
-            If scores are equal, the faster completion time determines the outcome.
+            If scores are equal, the faster completion time determines the
+            outcome.
           </p>
 
-          <h3 className="mb-1 font-semibold">Core Principle</h3>
+          <h3 className="mb-1 font-semibold">Key Principle</h3>
           <ul className="mb-4 list-disc pl-5">
             <li>Rewards are calculated and distributed by the platform.</li>
-            <li>Performance is primarily based on individual achievement.</li>
             <li>
-              Comparison only adjusts rewards within a limited and predefined
-              range.
+              Performance is primarily based on individual score thresholds.
+            </li>
+            <li>
+              Comparison only adjusts rewards within a controlled range.
             </li>
           </ul>
 
           <h3 className="mb-1 font-semibold">Task Completion Rules</h3>
           <ul className="mb-4 list-disc pl-5">
+            <li>Leaving before submission (reload, close, logout) → forfeit</li>
+            <li>Incorrect submissions → not evaluated</li>
             <li>
-              If you leave the task before submitting (e.g., close the page,
-              reload, or log out), the participation fee is forfeited.
-            </li>
-            <li>Incorrect submissions do not proceed to evaluation.</li>
-            <li>
-              Valid submissions remain eligible for evaluation or refund if
-              unmatched.
+              Valid submissions → eligible for evaluation or refund (if
+              unmatched)
             </li>
           </ul>
 
           <h3 className="mb-1 font-semibold">Fair Use &amp; Integrity</h3>
           <ul className="mb-4 list-disc pl-5">
             <li>Rate limits prevent excessive entries.</li>
-            <li>Timing is measured in milliseconds for precision.</li>
-            <li>All users receive identical task data within the same period.</li>
-            <li>Matching is automatic and anonymous to maintain fairness.</li>
-            <li>
-              The system is designed to discourage automation and unfair
-              advantages.
-            </li>
+            <li>Timing is measured in milliseconds.</li>
+            <li>Identical task conditions for all users.</li>
+            <li>Matching is automatic and anonymous.</li>
+            <li>Anti-automation measures are implemented.</li>
+          </ul>
+
+          <h3 className="mb-1 font-semibold">Summary</h3>
+          <ul className="mb-4 list-disc pl-5">
+            <li>Skill and speed determine your outcome.</li>
+            <li>Achieving 70+ is the key threshold.</li>
+            <li>Rewards are primarily based on your own performance.</li>
           </ul>
         </div>
 
